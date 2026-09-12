@@ -29,6 +29,15 @@ BarWidget {
     : (root.drawerService && root.drawerService.barWidgetRegistry
       ? root.drawerService.barWidgetRegistry.widgets : ({}))
 
+  // Settings arrive through a QML `var` property, so a list inside them can be
+  // a QVariantList sequence that Array.isArray rejects. Accept any array-like.
+  function toList(value) {
+    if (Array.isArray(value)) return value
+    if (value && typeof value === "object" && typeof value.length === "number")
+      return Array.prototype.slice.call(value)
+    return null
+  }
+
   // Since Omarchy 4.0.3 ("Quattro"), a bar-widget-kind plugin's `bar.shell` is
   // a capability-scoped PluginShellApi that no longer exposes `shellConfig`
   // (see Omarchy-drawer#2). `bar.layoutConfig`, however, is unconditionally
@@ -53,7 +62,7 @@ BarWidget {
   readonly property var configuredIds: {
     var rev = root.manageRevision
     void rev
-    var list = Array.isArray(root.settings.widgets) ? root.settings.widgets : null
+    var list = root.toList(root.settings.widgets)
     if (!Array.isArray(list)) {
       var defaults = root.defaultsFor(root.moduleName)
       list = defaults && Array.isArray(defaults.widgets) ? defaults.widgets : []
@@ -282,7 +291,7 @@ BarWidget {
   readonly property var hiddenViewIds: {
     var rev = root.manageRevision
     void rev
-    var list = Array.isArray(root.settings.hidden) ? root.settings.hidden : null
+    var list = root.toList(root.settings.hidden)
     if (!Array.isArray(list)) return []
     var out = []
     for (var j = 0; j < list.length; j++) {
@@ -374,7 +383,11 @@ BarWidget {
     var shell = root.bar && root.bar.shell
     if (!shell || typeof shell.updateEntryInline !== "function") return false
     var next = ({})
-    for (var k in root.settings) if (k !== "id") next[k] = root.settings[k]
+    for (var k in root.settings) {
+      if (k === "id") continue
+      var list = root.toList(root.settings[k])
+      next[k] = list ? list.slice() : root.settings[k]
+    }
     for (var o in overrides) next[o] = overrides[o]
     return shell.updateEntryInline(root.moduleName, next)
   }
