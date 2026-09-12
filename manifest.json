@@ -7,10 +7,12 @@
   "license": "MIT",
     "description": "Collapse chosen bar plugins into a tray-style drawer. Grid and list views with drag-and-drop reordering and a live preview of each plugin's bar icon; the grid stretches to fill the drawer width and the drawer adapts to the screen. Hide/unhide plugins via an eye toggle, with a show-hidden reveal in the drawer",
   "kinds": [
-    "bar-widget"
+    "bar-widget",
+    "service"
   ],
   "entryPoints": {
-    "barWidget": "Panel.qml"
+    "barWidget": "Panel.qml",
+    "service": "Service.qml"
   },
   "barWidget": {
     "displayName": "Plugin Drawer",

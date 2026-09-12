@@ -19,9 +19,15 @@ BarWidget {
   id: root
   moduleName: "3lymn.plugin-drawer"
 
-  // Registry of every enabled bar-widget plugin on this bar.
+  // Registry of every enabled bar-widget plugin on this bar. Omarchy 4.0.3's
+  // third-party `bar` facade has no barWidgetRegistry, so fall back to the
+  // snapshot the host injects into this plugin's own service (Service.qml).
+  readonly property var drawerService: root.bar && root.bar.shell
+    ? root.bar.shell.serviceFor(root.moduleName) : null
   readonly property var registryWidgets: root.bar && root.bar.barWidgetRegistry
-    ? root.bar.barWidgetRegistry.widgets : ({})
+    ? root.bar.barWidgetRegistry.widgets
+    : (root.drawerService && root.drawerService.barWidgetRegistry
+      ? root.drawerService.barWidgetRegistry.widgets : ({}))
 
   // Since Omarchy 4.0.3 ("Quattro"), a bar-widget-kind plugin's `bar.shell` is
   // a capability-scoped PluginShellApi that no longer exposes `shellConfig`
