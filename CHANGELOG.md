@@ -10,6 +10,8 @@ All notable changes to this project are documented here. Format follows
 - The grid or list choice survives a restart.
 - Keyboard use: arrows or hjkl move, Enter or Space opens, Esc closes.
 - A hotkey can open the drawer: `omarchy-shell shell toggle <plugin id>`.
+- The edit view moves widgets for real, in both directions. They keep their bar
+  settings, and they use them while in the drawer.
 
 ### Changed
 - The drawer card opens above the bar in one fixed spot and no longer covers bar
@@ -31,6 +33,7 @@ All notable changes to this project are documented here. Format follows
 - The edit list and widget scanning see every bar section, not just left, center
   and right.
 - A long drawer scrolls instead of clipping.
+- Leaving the edit view with the pen button no longer discards your changes.
 
 ## [0.9.0] - 2026-11-01
 

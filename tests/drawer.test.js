@@ -19,11 +19,9 @@ const name = id => ({ a: "Zed", b: "alpha", c: "Beta", self: "Drawer", gone: "Mi
 eq(editIds(layout, ["gone"], "self", name), ["gone", "b", "c", "a"])
 eq(editIds({ right: [{ id: "self" }] }, [], "self", name), [])
 
-const base = ["a", "b"]
-eq(withMember(base, "c", true), ["a", "b", "c"])
-eq(withMember(base, "a", true), ["a", "b"])
-eq(withMember(base, "a", false), ["b"])
-eq(base, ["a", "b"])
+eq(moveArgs(["a", "b"], ["b", "c"]), ["--to-drawer", "c", "--to-bar", "a"])
+eq(moveArgs(["a"], ["a"]), [])
+
 
 eq(reorder(["a", "b", "c"], ["a", "b", "c"], "a", 2), ["b", "a", "c"])
 eq(reorder(["a", "b", "c"], ["a", "b", "c"], "a", 3), ["b", "c", "a"])

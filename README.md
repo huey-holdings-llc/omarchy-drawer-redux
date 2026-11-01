@@ -51,10 +51,19 @@ omarchy plugin remove io.github.huey-holdings-llc.omarchy-drawer-redux
 - To open it from a hotkey, bind
   `omarchy-shell shell toggle io.github.huey-holdings-llc.omarchy-drawer-redux`.
 
+## What it changes
+
+Moving widgets edits `~/.config/omarchy/shell.json`, and only when you leave the
+edit view with changes. Omarchy has no command for this, so the drawer does one
+atomic write and keeps the previous file as `shell.json.drawer-backup`. A
+widget's bar settings travel with it. A third-party widget also gets an entry in
+`plugins`, which keeps it loaded while it is off the bar.
+
 ## Known limitations
 
-- A widget in the drawer uses its manifest defaults, not settings from its
-  `bar.layout` entry, because it has no such entry.
+- Moving a widget back to the bar puts it next to the drawer, not in its old
+  spot.
+- A widget with several instances on the bar, like a spacer, stays on the bar.
 - A third-party widget that needs its own service may not work from the drawer.
   Keep those on the bar.
 

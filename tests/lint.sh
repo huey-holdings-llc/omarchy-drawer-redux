@@ -106,6 +106,7 @@ step "logic"
 if command -v node >/dev/null; then
   if out=$({ sed '/^\.pragma/d' ui/drawer.js; cat tests/drawer.test.js; } | node - 2>&1); then ok "$out"; else printf '%s\n' "$out"; bad "drawer.js tests"; fi
 else skipped "drawer.js tests (need node)"; fi
+if out=$(bash tests/move-widgets.test.sh 2>&1); then ok "$out"; else printf '%s\n' "$out"; bad "move-widgets tests"; fi
 
 step "hosted widgets"
 # The bar destroys and recreates a plugin's bar API object when module slots
