@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import QtQuick.Controls
 import qs.Commons
 import qs.Ui
@@ -272,26 +273,24 @@ BarWidget {
     return menuPopup.fittedContentWidth(Math.max(avail * root.windowScale, Style.space(380)))
   }
 
-  // Move every staged difference between the drawer and the bar. Returns true
-  // when anything changed (the config mutation itself triggers the hot reload
-  // and the drawer's auto-reconcile; no shell restart is required).
+  // Move every staged difference between the drawer and the bar, in one write.
+  // The host sees the file change and reloads, which updates the lists.
   function commitDrawerChanges() {
-    var current = root.configuredIds.slice()
-    var pending = root.pendingDrawerIds.slice()
-    var changed = false
-    for (var i = 0; i < pending.length; i++) {
-      if (current.indexOf(pending[i]) === -1) {
-        root.setDrawer(pending[i], true)
-        changed = true
-      }
+    if (!root.manageMode || moveProcess.running) return
+    var moves = Drawer.moveArgs(root.configuredIds, root.pendingDrawerIds)
+    if (moves.length === 0) return
+    var script = decodeURIComponent(Qt.resolvedUrl("scripts/move-widgets.sh").toString().replace("file://", ""))
+    moveProcess.command = ["bash", script, root.moduleName].concat(moves)
+    moveProcess.running = true
+  }
+
+  Process {
+    id: moveProcess
+    onExited: function(code) {
+      if (code === 0) return
+      root.pendingDrawerIds = root.configuredIds.slice()
+      Quickshell.execDetached(["notify-send", "Omarchy Drawer Redux", "Could not move those widgets. Nothing was changed."])
     }
-    for (var j = 0; j < current.length; j++) {
-      if (pending.indexOf(current[j]) === -1) {
-        root.setDrawer(current[j], false)
-        changed = true
-      }
-    }
-    return changed
   }
 
   // In-drawer drag state: the id being dragged and the insertion index (before
@@ -498,7 +497,7 @@ BarWidget {
         if (!w) return
         if ("bar" in w) w.bar = Qt.binding(function() { return root.bar })
         if ("moduleName" in w) w.moduleName = slot.widgetId
-        if ("settings" in w) w.settings = root.defaultsFor(slot.widgetId)
+        if ("settings" in w) w.settings = Object.assign({}, root.defaultsFor(slot.widgetId), (root.settings.parked || {})[slot.widgetId])
         // Panel-style widgets anchor their panel to this item; point them at
         // the drawer button (in the bar window) so the panel opens underneath
         // the drawer.
@@ -768,8 +767,12 @@ BarWidget {
               verticalPadding: 3
               fontSize: Style.font.bodySmall
               onClicked: {
-                root.pendingDrawerIds = root.configuredIds.slice()
-                root.manageMode = !root.manageMode
+                if (root.manageMode) {
+                  root.leaveManageMode()
+                } else {
+                  root.pendingDrawerIds = root.configuredIds.slice()
+                  root.manageMode = true
+                }
               }
             }
           }
@@ -1195,15 +1198,5 @@ BarWidget {
     var list = root.configuredIds
     var next = Drawer.reorder(list, root.drawerVisibleIds, id, toIndex)
     if (next !== list) root.persistWidgets(next)
-  }
-
-  function layoutHas(id) {
-    return Drawer.layoutIds(root.barLayout).indexOf(String(id || "")) !== -1
-  }
-
-  function setDrawer(id, hide) {
-    var key = String(id || "")
-    if (!key) return
-    root.persistWidgets(Drawer.withMember(root.configuredIds, key, hide))
   }
 }

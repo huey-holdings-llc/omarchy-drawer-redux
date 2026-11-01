@@ -56,13 +56,14 @@ function editIds(layout, configured, selfId, name) {
   return out
 }
 
-// `id` added to or dropped from `list`, without touching the input.
-function withMember(list, id, member) {
-  var out = list.slice()
-  var i = out.indexOf(id)
-  if (member && i === -1) out.push(id)
-  else if (!member && i !== -1) out.splice(i, 1)
-  return out
+// move-widgets.sh arguments for the difference between two membership lists.
+function moveArgs(current, pending) {
+  var args = []
+  for (var i = 0; i < pending.length; i++)
+    if (current.indexOf(pending[i]) === -1) args.push("--to-drawer", pending[i])
+  for (var j = 0; j < current.length; j++)
+    if (pending.indexOf(current[j]) === -1) args.push("--to-bar", current[j])
+  return args
 }
 
 // Drag indices count the rows on screen; the stored list also holds widgets
