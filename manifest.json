@@ -5,7 +5,7 @@
   "version": "0.9.0",
   "author": "Corey Tyhurst",
   "license": "MIT",
-  "description": "Collapse chosen bar plugins into a tray-style drawer, with grid and list views, drag-and-drop reordering and live previews.",
+  "description": "Collapse chosen bar plugins into a tray-style drawer, with grid and list views, drag-and-drop reordering and previews.",
   "kinds": [
     "bar-widget",
     "service"
@@ -16,7 +16,7 @@
   },
   "barWidget": {
     "displayName": "Omarchy Drawer Redux",
-    "description": "Collapse chosen bar plugins into a tray-style drawer, with grid and list views, drag-and-drop reordering and live previews.",
+    "description": "Collapse chosen bar plugins into a tray-style drawer, with grid and list views, drag-and-drop reordering and previews.",
     "category": "Status",
     "allowMultiple": false,
     "defaultSection": "center",

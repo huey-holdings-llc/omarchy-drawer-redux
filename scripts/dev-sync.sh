@@ -30,3 +30,4 @@ if [[ "${1:-}" == "--enable" ]]; then
   omarchy-plugin-enable "$ID" --section right || true
 fi
 echo "installed → $DEST"
+echo "not loaded yet: run omarchy restart shell (a rescan keeps the old QML)"

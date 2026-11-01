@@ -48,4 +48,19 @@ eq(listDrop(40, 34, 4), 1)
 eq(listDrop(60, 34, 4), 2)
 eq(listDrop(500, 34, 4), 4)
 
+eq(moveCursor(-1, 0, 1, 3, 5), 0)
+eq(moveCursor(0, 1, 0, 3, 5), 1)
+eq(moveCursor(1, 0, 1, 3, 5), 4)
+eq(moveCursor(4, 0, 1, 3, 5), 4)
+eq(moveCursor(0, -1, 0, 3, 5), 0)
+eq(moveCursor(3, 0, 0, 1, 0), -1)
+
+eq(scrollTo(100, 50, 30, 200), 50)
+eq(scrollTo(100, 280, 30, 200), 110)
+eq(scrollTo(100, 150, 30, 200), 100)
+
+eq(listWidth([40, 90.2, 60], 50, 100, 300), 141)
+eq(listWidth([], 50, 100, 300), 100)
+eq(listWidth([900], 50, 100, 300), 300)
+
 console.log("drawer.js: ok")

@@ -107,3 +107,26 @@ function listDrop(y, pitch, count) {
   if (row >= count) return count
   return (y - row * pitch) < pitch / 2 ? row : row + 1
 }
+
+// Arrow-key cursor over `count` items laid out in `cols` columns. From nothing,
+// any key lands on the first item. Moves off the edge stay put.
+function moveCursor(index, dx, dy, cols, count) {
+  if (count <= 0) return -1
+  if (index < 0 || index >= count) return 0
+  var next = index + dx + dy * cols
+  return next < 0 || next >= count ? index : next
+}
+
+// contentY that brings [top, top + height] into a view of `viewH`.
+function scrollTo(contentY, top, height, viewH) {
+  if (top < contentY) return top
+  if (top + height > contentY + viewH) return top + height - viewH
+  return contentY
+}
+
+// Card width for the list view: the longest row, inside the given bounds.
+function listWidth(textWidths, chrome, min, max) {
+  var w = 0
+  for (var i = 0; i < textWidths.length; i++) w = Math.max(w, textWidths[i])
+  return Math.ceil(Math.max(min, Math.min(max, w + chrome)))
+}
