@@ -58,7 +58,7 @@ if [[ -n "$missing_fmt" ]]; then printf '  %s\n' $missing_fmt; bad "Text element
 if grep -nE '"#[0-9a-fA-F]{3,8}"|Qt\.rgba\(' -- "${QML[@]}"; then bad "colour literal in QML (use Color.* tokens)"; else ok "no colour literals"; fi
 # Commands are argv arrays; a string here would be a shell line.
 if grep -nE 'command: *"|execDetached\("' -- "${QML[@]}"; then bad "command given as a string, not an argv array"; else ok "commands are argv arrays"; fi
-if grep -nE 'console\.' -- "${QML[@]}"; then bad "console.* left in"; else ok "no console output left in"; fi
+if grep -nE 'console\.' -- "${QML[@]}" ui/*.js; then bad "console.* left in"; else ok "no console output left in"; fi
 # qmllint, with the shell's own modules registered. Three classes are noise here
 # and disabled: missing-property (the shell's Style/Color token groups are untyped
 # QtObjects), signal-handler-parameters (onExited(code) drops exitStatus on
@@ -100,6 +100,12 @@ if [[ -f "$STYLEQML" ]]; then
   if [[ -z "$unknown" ]]; then ok "every nested kit token the plugin uses exists in the shell's Style.qml"
   else bad "kit tokens the shell's Style.qml does not declare: $(printf '%s ' $unknown)"; fi
 else skipped "kit tokens (needs the omarchy shell's Style.qml)"; fi
+
+step "logic"
+# Pure logic lives in ui/drawer.js so it can run here, under node, without a shell.
+if command -v node >/dev/null; then
+  if out=$({ sed '/^\.pragma/d' ui/drawer.js; cat tests/drawer.test.js; } | node - 2>&1); then ok "$out"; else printf '%s\n' "$out"; bad "drawer.js tests"; fi
+else skipped "drawer.js tests (need node)"; fi
 
 step "hosted widgets"
 # The bar destroys and recreates a plugin's bar API object when module slots

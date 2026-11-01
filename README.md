@@ -15,8 +15,7 @@ Aly Sarhan, which is no longer maintained. It has not had a release yet.
 - Hides any bar widget in a compact drawer without disabling it.
 - Shows hidden widgets in a grid with live previews, or in a list.
 - Reorders them by drag and drop.
-- Moves plugins between the bar and the drawer from an edit view, where it can
-  also enable, disable or remove them.
+- Moves widgets between the bar and the drawer from an edit view.
 
 ## Requirements
 
