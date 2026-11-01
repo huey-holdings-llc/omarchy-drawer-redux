@@ -1,15 +1,14 @@
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import QtQuick.Controls
 import qs.Commons
 import qs.Ui
 
-// Plugin Drawer: collapse chosen bar widgets into a single menu button.
+// Omarchy Drawer Redux: collapse chosen bar widgets into a single menu button.
 //
 // Widgets listed in the `widgets` inline setting (or the manifest defaults)
-// are removed from the bar layout but stay mounted here — invisibly, at the
-// button's position in the bar — so clicking their entry in the drawer menu
+// are removed from the bar layout but stay mounted here: invisibly, at the
+// button's position in the bar: so clicking their entry in the drawer menu
 // opens their own panel anchored to the bar, right underneath the drawer.
 //
 // Left-clicking the hamburger opens the menu with the hidden widgets; the
@@ -17,7 +16,7 @@ import qs.Ui
 // the bar and the drawer, enables/disables them, and removes third-party ones.
 BarWidget {
   id: root
-  moduleName: "3lymn.plugin-drawer"
+  moduleName: "io.github.huey-holdings-llc.omarchy-drawer-redux"
 
   // Registry of every enabled bar-widget plugin on this bar. Omarchy 4.0.3's
   // third-party `bar` facade has no barWidgetRegistry, so fall back to the
@@ -89,7 +88,7 @@ BarWidget {
 
   // Every discovered plugin except the drawer itself, for the manage list. Read
   // from the plugin registry (not just the bar widget registry) so plugins that
-  // are disabled — or not bar widgets at all — can still be enabled, disabled,
+  // are disabled: or not bar widgets at all: can still be enabled, disabled,
   // or removed here. Drawer-configured widgets come first, then enabled
   // plugins, then the rest; alphabetical within each group. Plugins that can't
   // sit on the bar (custom, non bar-widgets) come next, and first-party
@@ -99,7 +98,7 @@ BarWidget {
   // 4.0.3, a bar-widget-kind plugin's pluginRegistry facade
   // (PluginRegistryApi) is scoped to itself only (Omarchy-drawer#2): its
   // `installedPlugins` is always a plain object, so a naive truthiness check
-  // never falls back — it just silently contains zero or one entries. This
+  // never falls back: it just silently contains zero or one entries. This
   // checks the actual contents instead of the container.
   readonly property bool hasFullRegistry: {
     var reg = root.bar && root.bar.shell && root.bar.shell.pluginRegistry
@@ -249,13 +248,6 @@ BarWidget {
   // closeForPopoutSwitch), so several can be queued up at once.
   property var pendingRemoveIds: []
 
-  // Plugin ids whose config still needs cleaning once the file deletion
-  // process (started when removals are committed) has finished. Kept as a
-  // property so the Process's onExited handler — which fires after the
-  // deletion actually completes — can finish the job without the in-flight rm
-  // being killed by the config-change triggered bar rebuild.
-  property var pendingCleanIds: []
-
   // --- view + hide state -----------------------------------------------------
 
   property string viewMode: "grid"
@@ -265,7 +257,7 @@ BarWidget {
   readonly property string ffont: root.bar ? root.bar.fontFamily : Style.font.family
 
   // Window scaling is a sub-setting on the drawer entry (`scale` now expressed
-  // as 10%–100% of the screen width); the sizing math is unchanged, just the
+  // as 10%-100% of the screen width); the sizing math is unchanged, just the
   // allowed range. Default 50% matches the previous behaviour.
   property real windowScale: Math.max(0.1, Math.min(1.0, root.entrySetting("scale", 0.5)))
   property int gridColumnSetting: Math.max(1, Math.round(root.entrySetting("gridColumns", 3)))
@@ -595,7 +587,7 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: "\uf0c9"
-    tooltipText: "Plugin Drawer"
+    tooltipText: "Omarchy Drawer Redux"
     onPressed: function(b) {
       if (b !== Qt.LeftButton) return
       if (root.menuOpen) root.close()
@@ -723,9 +715,10 @@ Item {
             clip: true
 
             Text {
+              textFormat: Text.PlainText
               id: titleText
               anchors.verticalCenter: parent.verticalCenter
-              text: "Plugin Drawer"
+              text: "Omarchy Drawer Redux"
               color: root.fg
               font.family: root.ffont
               font.pixelSize: Style.font.body
@@ -746,6 +739,7 @@ Item {
               spacing: Style.space(3)
 
               Text {
+                textFormat: Text.PlainText
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Grid"
                 color: root.fg
@@ -765,6 +759,7 @@ Item {
               }
 
               Text {
+                textFormat: Text.PlainText
                 anchors.verticalCenter: parent.verticalCenter
                 width: Style.space(44)
                 horizontalAlignment: Text.AlignHCenter
@@ -792,6 +787,7 @@ Item {
               spacing: Style.space(3)
 
               Text {
+                textFormat: Text.PlainText
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Window"
                 color: root.fg
@@ -811,6 +807,7 @@ Item {
               }
 
               Text {
+                textFormat: Text.PlainText
                 anchors.verticalCenter: parent.verticalCenter
                 width: Style.space(40)
                 horizontalAlignment: Text.AlignHCenter
@@ -939,6 +936,7 @@ Item {
               }
 
               Text {
+                textFormat: Text.PlainText
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.left: parent.left
                 anchors.right: parent.right
@@ -1007,6 +1005,7 @@ Item {
             }
 
             Text {
+              textFormat: Text.PlainText
               visible: root.configuredIds.length === 0
               width: drawerColumn.width
               text: "No widgets hidden."
@@ -1061,6 +1060,7 @@ Item {
               }
 
               Text {
+                textFormat: Text.PlainText
                 id: label
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
@@ -1095,6 +1095,7 @@ Item {
               }
 
               Text {
+                textFormat: Text.PlainText
                 id: gtileGlyph
                 visible: preview.status !== Loader.Ready || preview.item === null
                 anchors.fill: preview
@@ -1148,6 +1149,7 @@ Item {
           }
 
           Text {
+            textFormat: Text.PlainText
             visible: root.configuredIds.length === 0
             width: drawerGrid.width
             text: "No widgets hidden."
@@ -1165,9 +1167,10 @@ Item {
           spacing: Style.space(4)
 
           Text {
+            textFormat: Text.PlainText
             visible: !root.hasFullRegistry
             width: manageColumn.width
-            text: "Showing bar widgets only — enabling, disabling or adding other plugins needs a newer Omarchy plugin API (see project issue #2)."
+            text: "Showing bar widgets only: enabling, disabling or adding other plugins needs a newer Omarchy plugin API (see project issue #2)."
             color: Qt.darker(root.fg, 1.5)
             font.family: root.ffont
             font.pixelSize: Style.font.caption
@@ -1216,6 +1219,7 @@ Item {
                   : Border.controlSpec("normal", root.bar ? root.bar.foreground : Color.foreground, Color.accent)
 
                 Text {
+                  textFormat: Text.PlainText
                   anchors.centerIn: parent
                   visible: mrow.checked
                   text: "\u2713"
@@ -1227,6 +1231,7 @@ Item {
               }
 
               Text {
+                textFormat: Text.PlainText
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.left: checkbox.right
                 anchors.right: rowActions.left
@@ -1263,7 +1268,7 @@ Item {
                   height: 24
                   visible: root.configuredIds.indexOf(mrow.rowId) !== -1
                   text: root.isHiddenView(mrow.rowId) ? "\uf070" : "\uf06e"
-                  tooltipText: root.isHiddenView(mrow.rowId) ? "Hidden — click to show in drawer" : "Hide from drawer"
+                  tooltipText: root.isHiddenView(mrow.rowId) ? "Hidden: click to show in drawer" : "Hide from drawer"
                   foreground: root.isHiddenView(mrow.rowId) ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
                   horizontalPadding: 0
                   verticalPadding: 0
@@ -1307,7 +1312,7 @@ Item {
                   text: "\uf1f8"
                   tooltipText: root.isFirstPartyPlugin(mrow.rowId)
                     ? "Built-in plugin, cannot be removed"
-                    : (root.isRemovePending(mrow.rowId) ? "Marked for removal — click to cancel" : "Remove plugin")
+                    : (root.isRemovePending(mrow.rowId) ? "Marked for removal: click to cancel" : "Remove plugin")
                   foreground: root.isRemovePending(mrow.rowId)
                     ? Color.accent
                     : Color.foreground
@@ -1338,6 +1343,7 @@ Item {
           border.color: Color.accent
 
           Text {
+            textFormat: Text.PlainText
             id: dragGhostText
             anchors.fill: parent
             anchors.leftMargin: Style.space(8)
@@ -1386,12 +1392,12 @@ Item {
 
   // Broad, whole-config mutation. Since Omarchy 4.0.3, shell.mutateShellConfig
   // requires the caller's manifest to declare kind "bar" (a full replacement
-  // bar) — a bar-widget-kind plugin like this one now gets `false` back and
+  // bar): a bar-widget-kind plugin like this one now gets `false` back and
   // nothing is written (Omarchy-drawer#2). Kept for hosts/contexts where it
   // still works; callers below that rely on it for moving *other* widgets on
   // or off the bar are a known gap until Omarchy exposes a narrower
   // capability for that. Persisting this plugin's own entry does not need
-  // this path any more — see persistOwnSettings above.
+  // this path any more: see persistOwnSettings above.
   function mutateConfig(mutator) {
     var shell = root.bar && root.bar.shell
     if (!shell || typeof shell.mutateShellConfig !== "function") return
@@ -1505,22 +1511,8 @@ Item {
   // the bar is not rebuilt and the open menu survives); everything else goes
   // through the plugin registry's setEnabled. Removal is staged like drawer
   // membership: the bin click only marks the plugin (icon turns grey), and
-  // everything marked is deleted together when the user leaves edit mode —
-  // config references cleaned, plugin directory removed (backing up non-git
-  // dirs), then one registry reload.
-
-  Process {
-    id: removeProcess
-    stdout: StdioCollector { id: removeStdout; waitForEnd: true }
-    stderr: StdioCollector { id: removeStderr; waitForEnd: true }
-    onExited: {
-      // Files are gone now, so the config cleanup below is safe: the bar rebuild
-      // it triggers can no longer interrupt an in-flight file deletion.
-      for (var k = 0; k < root.pendingCleanIds.length; k++) root.cleanPluginConfig(root.pendingCleanIds[k])
-      root.pendingCleanIds = []
-      root.reloadPlugins()
-    }
-  }
+  // everything marked is deleted together when the user leaves edit mode:
+  // plugin directory removed, config references cleaned, one registry reload.
 
   function removeFromDisabledPlugins(key) {
     root.mutateConfig(function(c) {
@@ -1604,47 +1596,22 @@ Item {
     root.manageRevision++
   }
 
-  // Remove a plugin immediately on bin click. The file deletion runs first and
-  // config cleanup happens in the Process's onExited, i.e. only after the rm has
-  // actually finished. A config mutation (cleanPluginConfig → persistShellConfig)
-  // triggers a bar rebuild via onShellConfigChanged → syncPluginWidgets, and that
-  // rebuild destroys this drawer instance and kills any still-running child
-  // Process — so cleaning config synchronously here would tear the rm down
-  // mid-flight, leave the plugin's files on disk, and let the next rescan
-  // re-register it.
-  // Apply every staged removal. File deletion runs first (one bash script
-  // deletes all marked plugin dirs); config cleanup happens in the Process's
-  // onExited handler, i.e. only after the rm has actually finished. A config
-  // mutation (cleanPluginConfig → persistShellConfig) triggers a bar rebuild
-  // via onShellConfigChanged → syncPluginWidgets, and that rebuild destroys
-  // this drawer instance and kills any still-running child Process — so
-  // cleaning config synchronously here would tear the rm down mid-flight,
-  // leave the plugin's files on disk, and let the next rescan re-register it.
+  // Apply every staged removal. omarchy-plugin-remove does the deleting, by
+  // plugin id: it confines itself to the plugin directory, unlinks symlinks and
+  // backs up anything that is not a git clone. It runs detached because the
+  // config cleanup below rebuilds the bar, which destroys this drawer and would
+  // kill a child process.
   function commitRemoveChanges() {
     var ids = root.pendingRemoveIds
     if (!ids || ids.length === 0) return
-    var reg = root.bar && root.bar.shell && root.bar.shell.pluginRegistry
-    var pluginsDir = reg ? String(reg.pluginsDir || "") : ""
-    var scripts = []
-    var all = []
+    root.pendingRemoveIds = []
     for (var i = 0; i < ids.length; i++) {
       var key = String(ids[i] || "")
       if (!key) continue
-      all.push(key)
-      var manifest = root.pluginManifest(key)
-      var dir = manifest ? String(manifest.__sourceDir || "") : ""
-      if (dir && pluginsDir) scripts.push(root.removeScript(key, dir, pluginsDir))
+      Quickshell.execDetached(["omarchy-plugin-remove", key, "--yes"])
+      root.cleanPluginConfig(key)
     }
-    root.pendingRemoveIds = []
-    root.pendingCleanIds = all
-    if (scripts.length) {
-      removeProcess.command = ["bash", "-c", scripts.join("\n")]
-      removeProcess.running = true
-    } else {
-      for (var k = 0; k < root.pendingCleanIds.length; k++) root.cleanPluginConfig(root.pendingCleanIds[k])
-      root.pendingCleanIds = []
-      root.reloadPlugins()
-    }
+    root.reloadPlugins()
   }
 
   function reloadPlugins() {
@@ -1656,34 +1623,9 @@ Item {
     }
   }
 
-  // Shell command that removes a plugin's files: symlinks are unlinked, git
-  // clones deleted outright, anything else moved aside as a dot-hidden backup
-  // so a manual undo stays possible.
-  function removeScript(key, dir, pluginsDir) {
-    function q(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'" }
-    var dirQ = q(dir)
-    var pluginsDirQ = q(pluginsDir)
-    var parts = ["set -e"]
-    // Symlinks are only unlinked (never followed), so that is always safe.
-    parts.push("if [ -L " + dirQ + " ]; then rm -f " + dirQ + ";")
-    // For real directories, confine the action to a direct child of the
-    // plugin registry so a forged/stale __sourceDir cannot delete or move
-    // anything outside it.
-    parts.push("else")
-    parts.push("  base_canon=$(realpath -m " + pluginsDirQ + ")")
-    parts.push("  target=$(realpath -m " + dirQ + ")")
-    parts.push("  rel=${target#\"$base_canon/\"}")
-    parts.push("  if [ \"$rel\" = \"$target\" ] || [ \"$rel\" != \"${rel#*/}\" ]; then echo 'plugin-drawer: refusing non-registry path: '\"$target\"; exit 1; fi")
-    parts.push("  if [ -d " + dirQ + "/.git ]; then rm -rf " + dirQ + ";")
-    parts.push("  elif [ -d " + dirQ + " ]; then mv " + dirQ + " " + q(pluginsDir + "/." + key + ".bak.") + "$(date +%s)")
-    parts.push("  fi")
-    parts.push("fi")
-    return parts.join("\n")
-  }
-
   // Reconcile on load: every configured id stays enabled via plugins[] so the
   // drawer can mount it. This only *enables*; it never moves a widget off the
-  // bar — if the user placed a configured widget on the bar, it stays there.
+  // bar: if the user placed a configured widget on the bar, it stays there.
   function syncHiddenFromLayout() {
     var configured = root.configuredIds
     for (var i = 0; i < configured.length; i++) {
@@ -1715,9 +1657,9 @@ Item {
   // so it stays enabled and the drawer can mount it. Debounced so a burst of
   // config mutations from a single drawer edit settles into one pass; the
   // guarded mutations make repeat passes no-ops.
-  property var reconcileRegistry: root.bar ? root.bar.shell.pluginRegistry : null
+  property var reconcileRegistry: (root.bar && root.bar.shell && root.bar.shell.pluginRegistry) || null
 
-  onBarChanged: root.reconcileRegistry = root.bar ? root.bar.shell.pluginRegistry : null
+  onBarChanged: root.reconcileRegistry = (root.bar && root.bar.shell && root.bar.shell.pluginRegistry) || null
 
   Connections {
     target: root.reconcileRegistry

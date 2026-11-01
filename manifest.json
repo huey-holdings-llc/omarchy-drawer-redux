@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "3lymn.plugin-drawer",
-  "name": "Plugin Drawer",
+  "id": "io.github.huey-holdings-llc.omarchy-drawer-redux",
+  "name": "Omarchy Drawer Redux",
   "version": "1.2.0",
-  "author": "Aly Sarhan",
+  "author": "Corey Tyhurst",
   "license": "MIT",
-    "description": "Collapse chosen bar plugins into a tray-style drawer. Grid and list views with drag-and-drop reordering and a live preview of each plugin's bar icon; the grid stretches to fill the drawer width and the drawer adapts to the screen. Hide/unhide plugins via an eye toggle, with a show-hidden reveal in the drawer",
+  "description": "Collapse chosen bar plugins into a tray-style drawer, with grid and list views, drag-and-drop reordering and live previews.",
   "kinds": [
     "bar-widget",
     "service"
@@ -15,13 +15,19 @@
     "service": "Service.qml"
   },
   "barWidget": {
-    "displayName": "Plugin Drawer",
-  "description": "Collapse chosen bar plugins into a tray-style drawer. Grid and list views with drag-and-drop reordering and a live preview of each plugin's bar icon; the grid stretches to fill the drawer width and the drawer adapts to the screen. Hide/unhide plugins via an eye toggle, with a show-hidden reveal in the drawer",
+    "displayName": "Omarchy Drawer Redux",
+    "description": "Collapse chosen bar plugins into a tray-style drawer, with grid and list views, drag-and-drop reordering and live previews.",
     "category": "Status",
     "allowMultiple": false,
     "defaultSection": "center",
     "defaults": {
       "widgets": []
-    }
-  }
+    },
+    "aliases": [
+      "drawer",
+      "plugin drawer",
+      "hide widgets"
+    ]
+  },
+  "homepage": "https://github.com/huey-holdings-llc/omarchy-drawer-redux"
 }

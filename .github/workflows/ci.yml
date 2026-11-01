@@ -1,0 +1,29 @@
+name: ci
+
+# The token gets read access and nothing else; this workflow needs no secrets.
+permissions:
+  contents: read
+on:
+  push:
+    branches: [main, "release/**"]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 20
+    steps:
+      - name: Install tools (what an Omarchy install already has)
+        run: pacman -Syu --noconfirm --needed git jq shellcheck diffutils
+      - uses: actions/checkout@v4
+      - name: Static checks
+        env:
+          # qmllint (no omarchy shell modules here), omarchy-plugin-validate (not
+          # packaged) and the kit-token check (needs the shell's Style.qml) are the
+          # only checks that may skip in this container. Anything else going quiet
+          # is a bug, so lint fails on a different count.
+          LINT_EXPECT_SKIPS: "3"
+        run: |
+          git config --global --add safe.directory "$PWD"
+          bash tests/lint.sh

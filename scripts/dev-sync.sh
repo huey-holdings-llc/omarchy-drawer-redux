@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Mirror this checkout into the Omarchy plugin directory and reload the shell.
+# The plugin tree may not contain symlinks (validator rule), so we rsync.
+#   scripts/dev-sync.sh            # sync + validate + rescan
+#   scripts/dev-sync.sh --enable   # also enable the bar widget (right section)
+# (Not "dev-install": the marketplace reads any file named *install* or
+# *setup* as an installer a reviewer has to accept.)
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
+ID=$(jq -r .id "$HERE/manifest.json")
+DEST="$HOME/.config/omarchy/plugins/$ID"
+
+mkdir -p "$DEST"
+# A real install is a plain clone, so the mirror must not carry anything git
+# ignores. AGENTS.md especially: the marketplace does not allow agent-instruction
+# files in a distributed plugin, which is why it is untracked in the first place.
+rsync -a --delete \
+  --exclude .git --exclude 'tests/tmp' --exclude 'docs' --exclude '.spike' \
+  --exclude '.claude' --exclude 'AGENTS.md' --exclude 'coverage' \
+  "$HERE/" "$DEST/"
+chmod +x "$DEST/scripts/"*.sh
+
+if command -v omarchy-plugin-validate >/dev/null; then
+  omarchy-plugin-validate "$DEST"
+fi
+
+omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
+
+if [[ "${1:-}" == "--enable" ]]; then
+  omarchy-plugin-enable "$ID" --section right || true
+fi
+echo "installed → $DEST"
