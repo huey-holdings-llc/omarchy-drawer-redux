@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.huey-holdings-llc.omarchy-drawer-redux",
   "name": "Omarchy Drawer Redux",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "author": "Corey Tyhurst",
   "license": "MIT",
   "description": "Collapse chosen bar plugins into a tray-style drawer, with grid and list views, drag-and-drop reordering and previews.",

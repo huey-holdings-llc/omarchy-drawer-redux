@@ -31,3 +31,16 @@ feel free to fork if you would rather move at your own pace.
   `hyprctl output remove TEST`) and check the journal for `of null`.
 * **Commits**: `type(scope): summary`, with `feat`, `fix`, `ux`, `security`,
   `docs` or `chore`. Pull requests target `main`.
+
+## On each Omarchy release
+
+Redux leans on host internals with no stability promise. After an Omarchy update,
+check these in order, and run `omarchy restart shell` first:
+
+1. The drawer lists its widgets. This is `Service.barWidgetRegistry`, injected by
+   `ensureService` in `shell.qml`, and it is the first thing that would break.
+2. A widget's panel opens from the drawer, and from the keyboard.
+3. A move off the bar and back works. A third-party widget stays loaded because
+   of its `plugins` entry (`isEnabled` in `PluginRegistry.qml`).
+4. View mode, order and grid size survive a restart (`updateEntryInline`).
+5. `bash tests/lint.sh` passes against the new shell.

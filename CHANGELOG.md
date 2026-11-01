@@ -5,6 +5,10 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-01
+
+First public release.
+
 ### Added
 - List rows lead with the same icon as the tiles.
 - The grid or list choice survives a restart.
@@ -28,8 +32,11 @@ All notable changes to this project are documented here. Format follows
 ### Fixed
 - Hosted widgets get the drawer button as their anchor. They were getting
   nothing, because of a bad reference.
-- Dragging lands where it shows: rows in the grid, and with hidden widgets in the
-  list, no longer put a widget in the wrong slot.
+- Dragging lands where it shows: rows in the grid, forward drags, and hidden
+  widgets in the list no longer put a widget in the wrong slot.
+- A widget that also ends up on the bar is no longer mounted twice.
+- A widget with no panel says so instead of closing the drawer and doing nothing.
+- Clicking a dimmed widget unhides it, even if the mouse moves a little.
 - The edit list and widget scanning see every bar section, not just left, center
   and right.
 - A long drawer scrolls instead of clipping.
@@ -38,14 +45,12 @@ All notable changes to this project are documented here. Format follows
 ## [0.9.0] - 2026-11-01
 
 First development version of Redux. Numbering restarts here because the new
-plugin id has no update path from Plugin Drawer; 1.0.0 will be the first public
+plugin id has no update path from Plugin Drawer; 1.0.0 is the first public
 release.
 
 ### Changed
 - Continued as Omarchy Drawer Redux under Huey Holdings LLC, with the new plugin
   id `io.github.huey-holdings-llc.omarchy-drawer-redux`.
-- Removing a plugin now calls `omarchy-plugin-remove` instead of a generated
-  shell script.
 
 ### Fixed
 - Works on Omarchy 4.0.3 and later: the drawer reads the widget registry through

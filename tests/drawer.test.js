@@ -16,11 +16,23 @@ eq(layoutIds(layout), ["a", "b", "c"])
 eq(layoutIds(null), [])
 
 const name = id => ({ a: "Zed", b: "alpha", c: "Beta", self: "Drawer", gone: "Mid" })[id]
-eq(editIds(layout, ["gone"], "self", name), ["gone", "b", "c", "a"])
+eq(editIds(layout, ["gone"], "self", name), ["gone", "b", "c"])
 eq(editIds({ right: [{ id: "self" }] }, [], "self", name), [])
 
 eq(moveArgs(["a", "b"], ["b", "c"]), ["--to-drawer", "c", "--to-bar", "a"])
 eq(moveArgs(["a"], ["a"]), [])
+
+// A spacer is on the bar twice, so the edit view does not offer it.
+eq(editIds({ left: [{ id: "s" }, { id: "b" }], right: [{ id: "s" }] }, [], "self", id => id), ["b"])
+
+// A drop lands where the ghost shows, in both views.
+const row = ["a", "b", "c", "d"]
+for (let from = 0; from < 4; from++)
+  for (let cell = 0; cell < 4; cell++)
+    eq(reorder(row, row, row[from], gapForCell(cell, from)).indexOf(row[from]), cell)
+for (let from = 0; from < 4; from++)
+  for (let gap = 0; gap <= 4; gap++)
+    eq(reorder(row, row, row[from], gap).indexOf(row[from]), Math.min(3, slotForGap(gap, from)))
 
 
 eq(reorder(["a", "b", "c"], ["a", "b", "c"], "a", 2), ["b", "a", "c"])
