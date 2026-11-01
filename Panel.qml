@@ -412,8 +412,10 @@ BarWidget {
   Item {
     id: hiddenHost
     anchors.fill: button
-    // Opacity, not visible: an invisible item cannot be grabbed for a preview.
-    // The button sits on top, so these never take a click.
+    // These widgets stay live, so the stack is shown only while grabbing, as an
+    // invisible item cannot be grabbed. Left visible, they take the button's
+    // clicks through the bar's click targets.
+    visible: root.pendingGrabs > 0
     opacity: 0
 
     Repeater {
@@ -514,19 +516,31 @@ BarWidget {
   // copy would double its IPC handlers, and its panel cannot anchor inside the
   // card's window.
   property var previewGrabs: ({})
+  property int pendingGrabs: 0
 
   function grabPreviews() {
-    for (var id in root.mountedMap) root.grabPreview(id)
+    var ids = Object.keys(root.mountedMap)
+    root.pendingGrabs = ids.length
+    grabTimeout.restart()
+    for (var i = 0; i < ids.length; i++) root.grabPreview(ids[i])
   }
 
   function grabPreview(id) {
     var w = root.mountedItem(id)
-    if (!w || w.width <= 0 || w.height <= 0) return
-    w.grabToImage(function(result) {
+    var started = w && w.width > 0 && w.height > 0 && w.grabToImage(function(result) {
       var next = Object.assign({}, root.previewGrabs)
       next[id] = result
       root.previewGrabs = next
+      root.pendingGrabs = Math.max(0, root.pendingGrabs - 1)
     })
+    if (!started) root.pendingGrabs = Math.max(0, root.pendingGrabs - 1)
+  }
+
+  // A widget destroyed mid-grab never calls back, and the stack must not stay up.
+  Timer {
+    id: grabTimeout
+    interval: 500
+    onTriggered: root.pendingGrabs = 0
   }
 
   component WidgetPreview: Item {
