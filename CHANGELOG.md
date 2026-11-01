@@ -5,6 +5,12 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-01
+
+First development version of Redux. Numbering restarts here because the new
+plugin id has no update path from Plugin Drawer; 1.0.0 will be the first public
+release.
+
 ### Changed
 - Continued as Omarchy Drawer Redux under Huey Holdings LLC, with the new plugin
   id `io.github.huey-holdings-llc.omarchy-drawer-redux`.
