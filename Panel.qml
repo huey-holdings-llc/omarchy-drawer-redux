@@ -40,12 +40,15 @@ BarWidget {
   }
 
   // Configured ids that are actually registered, so the drawer can mount them.
+  // Anything also on the bar stays there: `omarchy plugin enable` or `omarchy bar
+  // put` can do that, and a second copy would double its IPC handlers.
   readonly property var hiddenIds: {
     var out = []
+    var onBar = Drawer.layoutIds(root.barLayout)
     var configured = root.configuredIds
     for (var i = 0; i < configured.length; i++) {
       var id = String(configured[i] || "")
-      if (id && root.registryWidgets[id]) out.push(id)
+      if (id && root.registryWidgets[id] && onBar.indexOf(id) === -1) out.push(id)
     }
     return out
   }
@@ -78,7 +81,7 @@ BarWidget {
 
   // Staged drawer membership while the edit menu is open: toggling a checkbox
   // only changes this list, so nothing moves or persists until the user leaves
-  // the menu. Leaving commits the diff and restarts the shell if it changed.
+  // the menu. Leaving commits the diff.
   property var pendingDrawerIds: []
 
   function isPending(id) {
@@ -97,7 +100,7 @@ BarWidget {
 
   // --- view + hide state -----------------------------------------------------
 
-  property string viewMode: root.entrySetting("viewMode", "grid") === "list" ? "list" : "grid"
+  readonly property string viewMode: root.entrySetting("viewMode", "grid") === "list" ? "list" : "grid"
   property bool showHidden: false
 
   readonly property color fg: root.bar ? root.bar.foreground : Color.foreground
@@ -106,15 +109,15 @@ BarWidget {
   // Window scaling is a sub-setting on the drawer entry (`scale` now expressed
   // as 10%-100% of the screen width); the sizing math is unchanged, just the
   // allowed range. Default 50% matches the previous behaviour.
-  property real windowScale: Math.max(0.1, Math.min(1.0, root.entrySetting("scale", 0.5)))
-  property int gridColumnSetting: Math.max(1, Math.round(root.entrySetting("gridColumns", 3)))
+  readonly property real windowScale: Math.max(0.1, Math.min(1.0, root.entrySetting("scale", 0.5)))
+  readonly property int gridColumnSetting: Math.max(1, Math.round(root.entrySetting("gridColumns", 3)))
 
   readonly property int tileSize: Style.space(64)
   readonly property int tileGap: Style.space(10)
   readonly property int tileHeight: Style.space(74)
   // The card tops out here and the body scrolls past it.
   readonly property real maxBodyHeight: Math.max(Style.space(80),
-    menuPopup.fittedContentHeight(Style.space(480)) - menuPopup.verticalContentInset - headerRow.height - menuColumn.spacing)
+    menuPopup.fittedContentHeight(Style.space(480), Style.space(480)) - menuPopup.verticalContentInset - headerRow.height - menuColumn.spacing)
   readonly property int listIconSize: Style.space(40)
   readonly property int listRowHeight: 30
 
@@ -132,7 +135,8 @@ BarWidget {
     if (cols < 1) cols = 1
     var w = drawerGrid.width
     if (w <= 0) return root.tileSize
-    return (w - (cols - 1) * root.tileGap) / cols
+    // Whole pixels: a Flow wraps the last tile early on a fractional width.
+    return Math.floor((w - (cols - 1) * root.tileGap) / cols)
   }
 
   // Plugin ids the user has hidden from the drawer view (a subset of the
@@ -150,12 +154,9 @@ BarWidget {
     var h = root.hiddenViewIds
     for (var i = 0; i < h.length; i++) hv[h[i]] = true
     var out = []
-    var cfg = root.configuredIds
-    for (var j = 0; j < cfg.length; j++) {
-      var cid = cfg[j]
-      if (!root.registryWidgets[cid]) continue
-      if (!hv[cid]) out.push(cid)
-    }
+    var cfg = root.hiddenIds
+    for (var j = 0; j < cfg.length; j++)
+      if (!hv[cfg[j]]) out.push(cfg[j])
     return out
   }
 
@@ -167,12 +168,8 @@ BarWidget {
     for (var i = 0; i < vis.length; i++) out.push({ id: vis[i], hidden: false })
     if (root.showHidden) {
       var hv = root.hiddenViewIds
-      var cfgSet = {}
-      for (var c = 0; c < root.configuredIds.length; c++) cfgSet[root.configuredIds[c]] = true
-      for (var k = 0; k < hv.length; k++) {
-        if (!root.registryWidgets[hv[k]]) continue
-        if (cfgSet[hv[k]]) out.push({ id: hv[k], hidden: true })
-      }
+      for (var k = 0; k < hv.length; k++)
+        if (root.hiddenIds.indexOf(hv[k]) !== -1) out.push({ id: hv[k], hidden: true })
     }
     return out
   }
@@ -230,14 +227,12 @@ BarWidget {
   }
 
   function setViewMode(mode) {
-    root.viewMode = mode
     root.persistEntrySetting("viewMode", mode)
   }
 
   function setGridColumns(n) {
     n = Math.max(1, Math.min(8, Math.round(n)))
     if (n === root.gridColumnSetting) return
-    root.gridColumnSetting = n
     root.persistEntrySetting("gridColumns", n)
     root.manageRevision++
   }
@@ -245,14 +240,11 @@ BarWidget {
   function setWindowScale(n) {
     n = Math.max(0.1, Math.min(1.0, Math.round(n * 100) / 100))
     if (Math.abs(n - root.windowScale) < 0.001) return
-    root.windowScale = n
     root.persistEntrySetting("scale", n)
     root.manageRevision++
   }
 
-  // The component the widget renders in the bar. Used as the tile's live
-  // preview so the grid shows the plugin's real bar appearance, falling back
-  // to the first-letter monogram when there is no component.
+  // The widget's bar component, null for an id with no registered widget.
   function widgetComponent(c) {
     var entry = root.registryWidgets[String(c || "")]
     return entry && entry.component ? entry.component : null
@@ -313,12 +305,13 @@ BarWidget {
   function dragMove(handle, mouseX, mouseY) {
     root.dragStarted = true
     var count = root.drawerVisibleIds.length
+    var from = root.drawerVisibleIds.indexOf(root.dragId)
     if (root.viewMode === "grid") {
       var cellW = root.gridCellW + root.tileGap
       var cellH = root.tileHeight + root.tileGap
       var local = drawerGrid.mapFromItem(handle, mouseX, mouseY)
       var drop = Drawer.gridDrop(local.x, local.y, cellW, cellH, root.gridCols, count)
-      root.dragTargetIndex = drop.index
+      root.dragTargetIndex = Drawer.gapForCell(drop.index, from)
       root.dragGhostX = drop.col * cellW
       root.dragGhostY = drop.row * cellH
     } else {
@@ -328,7 +321,7 @@ BarWidget {
       root.dragGhostX = 0
       // The ghost snaps to the slot it will land in so the drop position is
       // obvious instead of trailing the cursor.
-      root.dragGhostY = Math.max(0, Math.min(count - 1, root.dragTargetIndex)) * pitch
+      root.dragGhostY = Math.max(0, Math.min(count - 1, Drawer.slotForGap(root.dragTargetIndex, from))) * pitch
     }
   }
 
@@ -454,8 +447,17 @@ BarWidget {
     return root.mountedMap[id]
   }
 
+  function canOpen(w) {
+    return typeof w.toggle === "function" || "popupOpen" in w
+      || (typeof w.open === "function" && typeof w.close === "function")
+  }
+
   function openWidget(id) {
     var w = root.mountedItem(id)
+    if (w && !root.canOpen(w)) {
+      Quickshell.execDetached(["notify-send", "Omarchy Drawer Redux", root.displayName(id) + " has no panel to open from the drawer. Keep it on the bar."])
+      return
+    }
     if (w) {
       // Panel-style widgets and most clones expose a root toggle().
       if (typeof w.toggle === "function") {
@@ -614,7 +616,7 @@ BarWidget {
                 textFormat: Text.PlainText
                 id: titleText
                 anchors.verticalCenter: parent.verticalCenter
-                text: "Omarchy Drawer Redux"
+                text: "Drawer"
                 color: root.fg
                 font.family: root.ffont
                 font.pixelSize: Style.font.body
@@ -874,7 +876,7 @@ BarWidget {
                   }
 
                   onPositionChanged: function(mouse) {
-                    if (!(mouse.buttons & Qt.LeftButton)) return
+                    if (!root.dragActive || !(mouse.buttons & Qt.LeftButton)) return
                     if (!drow.dragged && (Math.abs(mouse.x - drow.pressX) + Math.abs(mouse.y - drow.pressY)) >= root.dragThreshold)
                       drow.dragged = true
                     if (drow.dragged) root.dragMove(drowMouse, mouse.x, mouse.y)
@@ -915,7 +917,7 @@ BarWidget {
 
               Text {
                 textFormat: Text.PlainText
-                visible: root.configuredIds.length === 0
+                visible: root.drawerDisplayIds.length === 0
                 width: drawerColumn.width
                 text: "No widgets hidden."
                 color: Qt.darker(root.fg, 1.5)
@@ -944,7 +946,8 @@ BarWidget {
 
                 readonly property string rowId: gtile.modelData.id
                 readonly property bool isHiddenItem: gtile.modelData.hidden
-                readonly property bool isDragTarget: root.dragActive && root.dragId !== gtile.rowId && root.dragTargetIndex === gtile.index
+                readonly property bool isDragTarget: root.dragActive && root.dragId !== gtile.rowId
+                  && Drawer.slotForGap(root.dragTargetIndex, root.drawerVisibleIds.indexOf(root.dragId)) === gtile.index
                 property real pressX: 0
                 property real pressY: 0
                 property bool dragged: false
@@ -1011,7 +1014,7 @@ BarWidget {
                   }
 
                   onPositionChanged: function(mouse) {
-                    if (!(mouse.buttons & Qt.LeftButton)) return
+                    if (!root.dragActive || !(mouse.buttons & Qt.LeftButton)) return
                     if (!gtile.dragged && (Math.abs(mouse.x - gtile.pressX) + Math.abs(mouse.y - gtile.pressY)) >= root.dragThreshold)
                       gtile.dragged = true
                     if (gtile.dragged) root.dragMove(gtileMouse, mouse.x, mouse.y)
@@ -1037,7 +1040,7 @@ BarWidget {
 
             Text {
               textFormat: Text.PlainText
-              visible: root.configuredIds.length === 0
+              visible: root.drawerDisplayIds.length === 0
               width: drawerGrid.width
               text: "No widgets hidden."
               color: Qt.darker(root.fg, 1.5)
@@ -1156,7 +1159,7 @@ BarWidget {
 
           Rectangle {
             id: dragGhost
-            visible: root.dragActive
+            visible: root.dragStarted
             z: 20
             x: root.dragGhostX
             y: root.dragGhostY

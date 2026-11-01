@@ -19,7 +19,7 @@ reset_config() {
     "layout": {
       "left": [{"id": "spacer"}, {"id": "spacer"}],
       "center": [{"id": "omarchy.clock", "format": "HH:mm"}],
-      "right": [{"id": "third.party", "color": "—"}, {"id": "drawer", "scale": 0.4, "widgets": ["old"], "hidden": ["old"]}],
+      "right": [{"id": "third.party", "color": "é"}, {"id": "drawer", "scale": 0.4, "widgets": ["old"], "hidden": ["old"]}],
       "tray": [{"id": "in.tray"}]
     }
   },
@@ -42,7 +42,7 @@ original=$(<"$CONFIG")
 move --to-drawer third.party --to-drawer omarchy.clock --to-drawer in.tray
 eq "left the bar" "$(on_bar third.party)$(on_bar omarchy.clock)$(on_bar in.tray)" "falsefalsefalse"
 eq "listed" "$(q '.bar.layout.right[0].widgets')" '["old","third.party","omarchy.clock","in.tray"]'
-eq "parked settings" "$(q '.bar.layout.right[0].parked')" '{"third.party":{"color":"—"},"omarchy.clock":{"format":"HH:mm"}}'
+eq "parked settings" "$(q '.bar.layout.right[0].parked')" '{"third.party":{"color":"é"},"omarchy.clock":{"format":"HH:mm"}}'
 eq "kept loaded" "$(q '[.plugins[].id]')" '["other","third.party","in.tray"]'
 eq "first party needs no entry" "$(q '[.plugins[].id] | index("omarchy.clock")')" "null"
 eq "the rest is left alone" "$(q '[.bar.position, .extra.untouched, .bar.layout.right[0].scale]')" '["bottom",1.50,0.4]'
@@ -57,10 +57,26 @@ eq "idempotent" "$(<"$CONFIG")" "$after"
 # And back: before the drawer, with its settings.
 move --to-bar third.party --to-bar omarchy.clock --to-bar old
 eq "back on the bar" "$(q '[.bar.layout.right[].id]')" '["third.party","omarchy.clock","old","drawer"]'
-eq "settings restored" "$(q '.bar.layout.right[0:2]')" '[{"id":"third.party","color":"—"},{"id":"omarchy.clock","format":"HH:mm"}]'
+eq "settings restored" "$(q '.bar.layout.right[0:2]')" '[{"id":"third.party","color":"é"},{"id":"omarchy.clock","format":"HH:mm"}]'
 eq "drawer list" "$(q '.bar.layout.right[3].widgets')" '["in.tray"]'
 eq "hidden cleared" "$(q '.bar.layout.right[3].hidden')" '[]'
 eq "parked gone" "$(q '.bar.layout.right[3] | has("parked")')" "false"
+eq "our plugins entry gone" "$(q '[.plugins[].id]')" '["other","in.tray"]'
+
+# A plugins entry the user gave settings to is theirs.
+reset_config
+move --to-drawer other
+move --to-bar other
+eq "their entry kept" "$(q '.plugins')" '[{"id":"other","keep":true}]'
+
+# String entries count as instances.
+reset_config
+jq '.bar.layout.center = ["str.widget"]' "$CONFIG" >"$CONFIG.new" && mv "$CONFIG.new" "$CONFIG"
+move --to-drawer str.widget
+eq "string entry left the bar" "$(q '.bar.layout.center')" '[]'
+jq '.bar.layout.right = ["str.other"] + .bar.layout.right' "$CONFIG" >"$CONFIG.new" && mv "$CONFIG.new" "$CONFIG"
+move --to-bar str.widget
+eq "placed before the drawer" "$(q '[.bar.layout.right[] | if type == "string" then . else .id end]')" '["str.other","third.party","str.widget","drawer"]'
 
 # A widget already on the bar is not added a second time.
 reset_config

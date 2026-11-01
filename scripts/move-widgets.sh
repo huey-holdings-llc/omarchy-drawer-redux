@@ -34,14 +34,16 @@ cp -p "$config" "$snapshot"
 jq --arg self "$self" \
   --argjson toDrawer "$(jq -n '$ARGS.positional' --args -- ${to_drawer[@]+"${to_drawer[@]}"})" \
   --argjson toBar "$(jq -n '$ARGS.positional' --args -- ${to_bar[@]+"${to_bar[@]}"})" '
-  def instances($id): [.bar.layout[]? | arrays | .[] | objects | select(.id == $id)];
+  # The host also accepts a bare string as a layout entry.
+  def eid: if type == "string" then . else .id? end;
+  def instances($id): [.bar.layout[]? | arrays | .[] | select(eid == $id)];
   def drawer: .bar.layout[]? | arrays | .[] | objects | select(.id == $self);
   def section: first(.bar.layout | to_entries[]
     | select(.value | arrays | any(.[]; objects | .id == $self)) | .key);
 
   def park($id):
-    (instances($id)[0] // {} | del(.id)) as $entry
-    | del(.bar.layout[]? | arrays | .[] | objects | select(.id == $id))
+    ((instances($id)[0] // {}) | if type == "object" then del(.id) else {} end) as $entry
+    | del(.bar.layout[]? | arrays | .[] | select(eid == $id))
     | if ($id | startswith("omarchy.")) or any(.plugins[]?; .id? == $id) then .
       else .plugins = ((.plugins // []) + [{id: $id}]) end
     | (drawer) |= (
@@ -51,10 +53,13 @@ jq --arg self "$self" \
   def unpark($id):
     if instances($id) == [] then
       section as $s
-      | ({id: $id} + ((drawer | .parked[$id]?) // {})) as $entry
-      | (.bar.layout[$s] | map(.id? == $self) | index(true)) as $at
+      | ({id: $id} + ((drawer | .parked[$id]?) // {}) + {id: $id}) as $entry
+      | (.bar.layout[$s] | map(eid == $self) | index(true)) as $at
       | .bar.layout[$s] |= .[:$at] + [$entry] + .[$at:]
     else . end
+    # Only an entry with nothing in it: leaving one behind makes `omarchy plugin
+    # disable` stop at the bar entry and leave the widget loaded.
+    | .plugins |= (if . then map(select(. != {id: $id})) else . end)
     | (drawer) |= (
         .widgets = ((.widgets // []) - [$id])
         | if .hidden then .hidden -= [$id] else . end
@@ -74,8 +79,8 @@ jq --arg self "$self" \
 ' "$snapshot" >"$tmp"
 
 # The shell writes this file too. ponytail: it takes no lock we could share, so a
-# write in the instant between this check and the mv still loses; the window is
-# microseconds and the backup holds what it replaced.
+# write in the instant between this check and the mv is lost. The window is
+# microseconds, and the shell's next write has the whole config anyway.
 cmp -s "$config" "$snapshot" || fail "shell.json changed while moving, nothing written"
 chmod --reference="$config" "$tmp"
 mv "$snapshot" "$config.drawer-backup"

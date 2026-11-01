@@ -21,8 +21,8 @@ other work.
 ## What counts
 
 Anything that executes code from data (a plugin id, name or manifest field), and
-anything that deletes or overwrites files other than the plugin a user chose to
-remove.
+anything that deletes files, or changes `shell.json` beyond what the README
+describes.
 
 ## Scope notes
 

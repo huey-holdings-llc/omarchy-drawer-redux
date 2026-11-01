@@ -38,10 +38,22 @@ function layoutIds(layout) {
   return out
 }
 
+// How many times `id` is on the bar. Spacers can be there several times.
+function instanceCount(layout, id) {
+  var n = 0
+  for (var s in layout) {
+    var entries = toList(layout[s]) || []
+    for (var i = 0; i < entries.length; i++)
+      if (entries[i] && String(entries[i].id || "") === id) n++
+  }
+  return n
+}
+
 // The edit list: everything on the bar plus everything in the drawer, minus the
-// drawer itself. Drawer members first, then alphabetical by name().
+// drawer itself and anything with several instances, which cannot be moved as
+// one. Drawer members first, then alphabetical by name().
 function editIds(layout, configured, selfId, name) {
-  var out = layoutIds(layout)
+  var out = layoutIds(layout).filter(function(id) { return instanceCount(layout, id) === 1 })
   for (var c = 0; c < configured.length; c++)
     if (out.indexOf(configured[c]) === -1) out.push(configured[c])
   out = out.filter(function(id) { return id !== selfId })
@@ -79,6 +91,17 @@ function reorder(configured, visible, id, toIndex) {
   var at = slot < rest.length ? out.indexOf(rest[slot]) : out.indexOf(rest[rest.length - 1]) + 1
   out.splice(at, 0, id)
   return out
+}
+
+// reorder takes a gap. A grid drop names the cell to end up in, which past the
+// dragged tile is one gap further on.
+function gapForCell(cell, from) {
+  return from !== -1 && cell > from ? cell + 1 : cell
+}
+
+// The row a dragged item ends up on when dropped in `gap`.
+function slotForGap(gap, from) {
+  return from !== -1 && gap > from ? gap - 1 : gap
 }
 
 // updateEntryInline replaces the whole entry, so carry every field over.
