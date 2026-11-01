@@ -3,6 +3,7 @@ import Quickshell
 import QtQuick.Controls
 import qs.Commons
 import qs.Ui
+import "ui/drawer.js" as Drawer
 
 // Omarchy Drawer Redux: collapse chosen bar widgets into a single menu button.
 //
@@ -11,68 +12,30 @@ import qs.Ui
 // button's position in the bar: so clicking their entry in the drawer menu
 // opens their own panel anchored to the bar, right underneath the drawer.
 //
-// Left-clicking the hamburger opens the menu with the hidden widgets; the
-// "Edit plugins" footer switches to a manage list that moves plugins between
-// the bar and the drawer, enables/disables them, and removes third-party ones.
+// Left-clicking the hamburger opens the menu with the hidden widgets; the pen
+// switches to an edit list that moves widgets between the bar and the drawer.
 BarWidget {
   id: root
   moduleName: "io.github.huey-holdings-llc.omarchy-drawer-redux"
 
-  // Registry of every enabled bar-widget plugin on this bar. Omarchy 4.0.3's
-  // third-party `bar` facade has no barWidgetRegistry, so fall back to the
-  // snapshot the host injects into this plugin's own service (Service.qml).
+  // Omarchy's `bar` facade has no widget registry, so read the snapshot the host
+  // injects into this plugin's own service (Service.qml).
   readonly property var drawerService: root.bar && root.bar.shell
+    && typeof root.bar.shell.serviceFor === "function"
     ? root.bar.shell.serviceFor(root.moduleName) : null
-  readonly property var registryWidgets: root.bar && root.bar.barWidgetRegistry
-    ? root.bar.barWidgetRegistry.widgets
-    : (root.drawerService && root.drawerService.barWidgetRegistry
-      ? root.drawerService.barWidgetRegistry.widgets : ({}))
+  readonly property var registryWidgets: root.drawerService && root.drawerService.barWidgetRegistry
+    ? root.drawerService.barWidgetRegistry.widgets : ({})
 
-  // Settings arrive through a QML `var` property, so a list inside them can be
-  // a QVariantList sequence that Array.isArray rejects. Accept any array-like.
-  function toList(value) {
-    if (Array.isArray(value)) return value
-    if (value && typeof value === "object" && typeof value.length === "number")
-      return Array.prototype.slice.call(value)
-    return null
-  }
+  // Read-only snapshot of every bar section, handed to all bar widgets.
+  readonly property var barLayout: root.bar ? root.bar.layoutConfig : null
 
-  // Since Omarchy 4.0.3 ("Quattro"), a bar-widget-kind plugin's `bar.shell` is
-  // a capability-scoped PluginShellApi that no longer exposes `shellConfig`
-  // (see Omarchy-drawer#2). `bar.layoutConfig`, however, is unconditionally
-  // handed to every bar widget (first- or third-party alike) as a read-only
-  // snapshot of the whole bar's left/center/right entries, so it is the one
-  // reliable source left for inspecting *other* widgets' placement. Falls
-  // back to the old `shellConfig` path for hosts that still provide it.
-  function barLayoutSections() {
-    var cfg = root.bar ? root.bar.layoutConfig : null
-    if (cfg && (Array.isArray(cfg.left) || Array.isArray(cfg.center) || Array.isArray(cfg.right)))
-      return cfg
-    var shell = root.bar && root.bar.shell
-    var config = shell ? shell.shellConfig : null
-    return config && config.bar && config.bar.layout ? config.bar.layout : null
-  }
-
-  // Raw configured list. Read straight off this plugin's own injected
-  // `settings` (always kept current by the host regardless of capability
-  // scoping) instead of re-scanning a config object that may not be reachable
-  // any more. Falls back to manifest defaults when the entry has no
-  // `widgets` key yet.
+  // Raw configured list, from this plugin's own injected settings, falling back
+  // to the manifest defaults when the entry has no `widgets` key yet.
   readonly property var configuredIds: {
     var rev = root.manageRevision
     void rev
-    var list = root.toList(root.settings.widgets)
-    if (!Array.isArray(list)) {
-      var defaults = root.defaultsFor(root.moduleName)
-      list = defaults && Array.isArray(defaults.widgets) ? defaults.widgets : []
-    }
-    if (!Array.isArray(list)) return []
-    var out = []
-    for (var j = 0; j < list.length; j++) {
-      var id = String(list[j] || "")
-      if (id) out.push(id)
-    }
-    return out
+    var list = Drawer.toList(root.settings.widgets)
+    return Drawer.cleanIds(list || root.defaultsFor(root.moduleName).widgets)
   }
 
   // Configured ids that are actually registered, so the drawer can mount them.
@@ -86,133 +49,18 @@ BarWidget {
     return out
   }
 
-  // Every discovered plugin except the drawer itself, for the manage list. Read
-  // from the plugin registry (not just the bar widget registry) so plugins that
-  // are disabled: or not bar widgets at all: can still be enabled, disabled,
-  // or removed here. Drawer-configured widgets come first, then enabled
-  // plugins, then the rest; alphabetical within each group. Plugins that can't
-  // sit on the bar (custom, non bar-widgets) come next, and first-party
-  // plugins (which can't be removed) are pushed to the very bottom.
-  //
-  // True when the host still exposes the full plugin catalog. Since Omarchy
-  // 4.0.3, a bar-widget-kind plugin's pluginRegistry facade
-  // (PluginRegistryApi) is scoped to itself only (Omarchy-drawer#2): its
-  // `installedPlugins` is always a plain object, so a naive truthiness check
-  // never falls back: it just silently contains zero or one entries. This
-  // checks the actual contents instead of the container.
-  readonly property bool hasFullRegistry: {
-    var reg = root.bar && root.bar.shell && root.bar.shell.pluginRegistry
-    var installed = reg && reg.installedPlugins ? reg.installedPlugins : null
-    if (!installed) return false
-    var keys = Object.keys(installed)
-    return !(keys.length <= 1 && (keys.length === 0 || keys[0] === root.moduleName))
-  }
-
-  readonly property var allPlugins: {
-    var hidden = {}
-    var configured = root.configuredIds
-    for (var h = 0; h < configured.length; h++) hidden[configured[h]] = true
-    var out = []
-    if (root.hasFullRegistry) {
-      var installed = root.bar.shell.pluginRegistry.installedPlugins
-      for (var id in installed) if (id !== root.moduleName) out.push(id)
-    } else {
-      // Sandboxed bar-widget context: the full catalog isn't reachable, so
-      // fall back to widgets already sitting in the bar's public layout
-      // snapshot (always exposed via bar.layoutConfig). This restores the
-      // "which currently-on-bar widgets are hidden" checklist, though
-      // discovering installed-but-not-placed plugins stays unavailable here.
-      var sections = root.barLayoutSections()
-      var seen = {}
-      var names = ["left", "center", "right"]
-      if (sections) {
-        for (var s = 0; s < names.length; s++) {
-          var arr = sections[names[s]]
-          if (!Array.isArray(arr)) continue
-          for (var i = 0; i < arr.length; i++) {
-            var wid = arr[i] && String(arr[i].id || "")
-            if (wid && wid !== root.moduleName && !seen[wid]) { seen[wid] = true; out.push(wid) }
-          }
-        }
-      }
-      // Widgets already configured into the drawer (so already off the live
-      // bar) still belong in the checklist so they can be unchecked.
-      for (var c = 0; c < configured.length; c++) {
-        if (!seen[configured[c]]) { seen[configured[c]] = true; out.push(configured[c]) }
-      }
-    }
-    out.sort(function(a, b) {
-      function rank(x) {
-        if (hidden[x]) return 0
-        var firstParty = root.isFirstPartyPlugin(x)
-        var isWidget = root.isBarWidgetPlugin(x)
-        if (firstParty) return 5
-        if (!isWidget) return 4
-        return root.pluginEnabled(x) ? 1 : 2
-      }
-      var ra = rank(a)
-      var rb = rank(b)
-      if (ra !== rb) return ra - rb
-      var na = root.displayName(a).toLowerCase()
-      var nb = root.displayName(b).toLowerCase()
-      return na < nb ? -1 : (na > nb ? 1 : 0)
-    })
-    return out
-  }
+  // Everything the edit view lists: bar widgets from the layout snapshot, plus
+  // what is already in the drawer so it can be unchecked.
+  readonly property var allPlugins: Drawer.editIds(root.barLayout, root.configuredIds, root.moduleName, root.displayName)
 
   function defaultsFor(id) {
     var entry = root.registryWidgets[id]
-    if (entry && entry.metadata && entry.metadata.defaults) return entry.metadata.defaults
-    var manifest = root.pluginManifest(id)
-    return manifest && manifest.barWidget && manifest.barWidget.defaults
-      ? manifest.barWidget.defaults : ({})
+    return entry && entry.metadata && entry.metadata.defaults ? entry.metadata.defaults : ({})
   }
 
   function displayName(id) {
     var entry = root.registryWidgets[id]
-    if (entry && entry.metadata && entry.metadata.displayName) return String(entry.metadata.displayName)
-    var manifest = root.pluginManifest(id)
-    if (manifest && manifest.name) return String(manifest.name)
-    return id
-  }
-
-  // Manifest lookup falls back to the plugin registry so disabled plugins (no
-  // bar registry entry) still show their real name and kinds in the edit list.
-  function pluginManifest(id) {
-    var reg = root.bar && root.bar.shell && root.bar.shell.pluginRegistry
-    return reg && reg.installedPlugins ? (reg.installedPlugins[String(id || "")] || null) : null
-  }
-
-  function pluginEnabled(id) {
-    var reg = root.bar && root.bar.shell && root.bar.shell.pluginRegistry
-    if (!reg || typeof reg.isEnabled !== "function") return false
-    return reg.isEnabled(String(id || ""))
-  }
-
-  function isBarWidgetPlugin(id) {
-    var manifest = root.pluginManifest(id)
-    if (manifest) return !!(Array.isArray(manifest.kinds) && manifest.kinds.indexOf("bar-widget") !== -1)
-    if (root.hasFullRegistry) return false
-    // No manifest reachable (sandboxed bar-widget context, see
-    // hasFullRegistry above): anything present in the bar's public layout
-    // snapshot, or already configured into this drawer, is by definition
-    // already a bar widget.
-    return root.layoutHas(id) || root.configuredIds.indexOf(String(id || "")) !== -1
-  }
-
-  function isFirstPartyPlugin(id) {
-    var manifest = root.pluginManifest(id)
-    return !!(manifest && manifest.__isFirstParty)
-  }
-
-  // A widget-style disable (take it off the bar / out of the drawer) is only
-  // meaningful while the plugin is referenced in the config. A first-party
-  // non-widget is always loadable, so it disables via disabledPlugins[].
-  function canDisable(id) {
-    var key = String(id || "")
-    if (!key) return false
-    if (root.isBarWidgetPlugin(key)) return root.layoutHas(key) || root.pluginsHas(key)
-    return root.pluginEnabled(key)
+    return entry && entry.metadata && entry.metadata.displayName ? String(entry.metadata.displayName) : id
   }
 
   // --- menu state ------------------------------------------------------------
@@ -242,11 +90,6 @@ BarWidget {
     else list.splice(idx, 1)
     root.pendingDrawerIds = list
   }
-
-  // Plugin ids the user has marked for removal in the manage list. They are
-  // only deleted when the drawer is dismissed (close / leaveManageMode /
-  // closeForPopoutSwitch), so several can be queued up at once.
-  property var pendingRemoveIds: []
 
   // --- view + hide state -----------------------------------------------------
 
@@ -283,14 +126,7 @@ BarWidget {
   readonly property var hiddenViewIds: {
     var rev = root.manageRevision
     void rev
-    var list = root.toList(root.settings.hidden)
-    if (!Array.isArray(list)) return []
-    var out = []
-    for (var j = 0; j < list.length; j++) {
-      var hid = String(list[j] || "")
-      if (hid) out.push(hid)
-    }
-    return out
+    return Drawer.cleanIds(root.settings.hidden)
   }
 
   // Configured widgets that are not hidden from the view.
@@ -363,25 +199,13 @@ BarWidget {
     return fallback
   }
 
-  // Persists a change to the drawer's own bar-layout entry via
-  // shell.updateEntryInline, the one write path a bar-widget-kind plugin
-  // keeps under Omarchy 4.0.3's capability sandbox (Omarchy-drawer#2):
-  // it is scoped to a plugin's own entry (pluginOwnsTarget), unlike
-  // shell.mutateShellConfig below, which now requires the manifest to
-  // declare kind "bar" and silently no-ops for bar-widget plugins like this
-  // one. updateEntryInline replaces the whole entry, so every existing field
-  // has to be carried over alongside the override.
+  // Persists a change to the drawer's own bar-layout entry. updateEntryInline
+  // is the one write path a bar-widget plugin has, scoped to its own entry, and
+  // it replaces the whole entry.
   function persistOwnSettings(overrides) {
     var shell = root.bar && root.bar.shell
     if (!shell || typeof shell.updateEntryInline !== "function") return false
-    var next = ({})
-    for (var k in root.settings) {
-      if (k === "id") continue
-      var list = root.toList(root.settings[k])
-      next[k] = list ? list.slice() : root.settings[k]
-    }
-    for (var o in overrides) next[o] = overrides[o]
-    return shell.updateEntryInline(root.moduleName, next)
+    return shell.updateEntryInline(root.moduleName, Drawer.mergedSettings(root.settings, overrides))
   }
 
   function persistEntrySetting(name, value) {
@@ -424,20 +248,6 @@ BarWidget {
     return menuPopup.fittedContentWidth(w)
   }
 
-  function isRemovePending(id) {
-    return root.pendingRemoveIds.indexOf(String(id || "")) !== -1
-  }
-
-  function toggleRemovePending(id) {
-    var key = String(id || "")
-    if (!key || root.isFirstPartyPlugin(key)) return
-    var list = root.pendingRemoveIds.slice()
-    var i = list.indexOf(key)
-    if (i === -1) list.push(key)
-    else list.splice(i, 1)
-    root.pendingRemoveIds = list
-    root.manageRevision++
-  }
 
   // Move every staged difference between the drawer and the bar. Returns true
   // when anything changed (the config mutation itself triggers the hot reload
@@ -461,14 +271,12 @@ BarWidget {
     return changed
   }
 
-  // In-drawer drag state: the id being dragged, the insertion index (before
-  // that row), and whether the cursor is in the "show on bar" zone above the
-  // card (i.e. over the drawer button in the bar).
+  // In-drawer drag state: the id being dragged and the insertion index (before
+  // that row).
   property string dragId: ""
   property bool dragActive: false
   property bool dragStarted: false
   property int dragTargetIndex: -1
-  property bool dragShowZone: false
   property real dragGhostX: 0
   property real dragGhostY: 0
   readonly property real dragThreshold: Style.space(6)
@@ -478,57 +286,35 @@ BarWidget {
     root.dragActive = true
     root.dragStarted = false
     root.dragTargetIndex = -1
-    root.dragShowZone = false
   }
 
   function dragMove(handle, mouseX, mouseY) {
     root.dragStarted = true
     var count = root.drawerVisibleIds.length
     if (root.viewMode === "grid") {
-      // Index follows the cursor in row-major reading order across the Flow,
-      // using the stretched cell size so the ghost lands in the right slot.
-      var cell = root.gridCellW + root.tileGap
-      var cols = root.gridCols
+      var cellW = root.gridCellW + root.tileGap
+      var cellH = root.tileHeight + root.tileGap
       var local = drawerGrid.mapFromItem(handle, mouseX, mouseY)
-      var col = Math.floor(local.x / cell)
-      var row = Math.floor(local.y / cell)
-      if (col < 0) col = 0
-      if (col > cols - 1) col = cols - 1
-      if (row < 0) row = 0
-      var index = row * cols + col
-      if (index > count) index = count
-      root.dragTargetIndex = index
-      root.dragGhostX = col * cell
-      root.dragGhostY = row * cell
+      var drop = Drawer.gridDrop(local.x, local.y, cellW, cellH, root.gridCols, count)
+      root.dragTargetIndex = drop.index
+      root.dragGhostX = drop.col * cellW
+      root.dragGhostY = drop.row * cellH
     } else {
+      var pitch = 30 + Style.space(4)
+      var rowY = drawerColumn.mapFromItem(handle, mouseX, mouseY).y
+      root.dragTargetIndex = Drawer.listDrop(rowY, pitch, count)
       root.dragGhostX = 0
-      var llocal = drawerColumn.mapFromItem(handle, mouseX, mouseY)
-      var pitch = 34
-      var rowIndex = Math.floor(llocal.y / pitch)
-      var index2
-      if (rowIndex < 0) index2 = 0
-      else if (rowIndex >= count) index2 = count
-      else index2 = (llocal.y - rowIndex * pitch) < 15 ? rowIndex : rowIndex + 1
-      if (index2 > count) index2 = count
-      root.dragTargetIndex = index2
       // The ghost snaps to the slot it will land in so the drop position is
       // obvious instead of trailing the cursor.
-      root.dragGhostY = Math.max(0, Math.min(count - 1, index2)) * pitch
+      root.dragGhostY = Math.max(0, Math.min(count - 1, root.dragTargetIndex)) * pitch
     }
   }
 
   function dragEnd() {
     var id = root.dragId
-    var show = root.dragShowZone
     var targetIndex = root.dragTargetIndex
-    root.dragId = ""
-    root.dragActive = false
-    root.dragStarted = false
-    root.dragTargetIndex = -1
-    root.dragShowZone = false
-    if (!id) return
-    // if (show) root.setDrawer(id, false)
-    root.moveWidgetToIndex(id, targetIndex)
+    root.dragCancel()
+    if (id) root.moveWidgetToIndex(id, targetIndex)
   }
 
   function dragCancel() {
@@ -536,7 +322,6 @@ BarWidget {
     root.dragActive = false
     root.dragStarted = false
     root.dragTargetIndex = -1
-    root.dragShowZone = false
   }
 
   function open() {
@@ -545,21 +330,15 @@ BarWidget {
     root.manageMode = false
   }
   function close() {
-    root.commitRemoveChanges()
     root.commitDrawerChanges()
     root.menuOpen = false
     root.manageMode = false
     root.manageRevision++
   }
   function closeForPopoutSwitch() {
-    root.commitRemoveChanges()
-    root.commitDrawerChanges()
-    root.menuOpen = false
-    root.manageMode = false
-    root.manageRevision++
+    root.close()
   }
   function leaveManageMode() {
-    root.commitRemoveChanges()
     root.commitDrawerChanges()
     root.manageMode = false
     root.manageRevision++
@@ -618,32 +397,21 @@ BarWidget {
   function openWidget(id) {
     var w = root.mountedItem(id)
     if (w) {
-      var toggled = false
       // Panel-style widgets and most clones expose a root toggle().
       if (typeof w.toggle === "function") {
         w.toggle()
-        toggled = true
       } else if ("popupOpen" in w) {
         // Widgets that own a popupOpen boolean (prayer-times, kanban, ...).
         w.popupOpen = !w.popupOpen
-        toggled = true
       } else if ("opened" in w && typeof w.open === "function" && typeof w.close === "function") {
         if (w.opened) w.close()
         else w.open()
-        toggled = true
       } else if ("menuOpen" in w && typeof w.open === "function" && typeof w.close === "function") {
         if (w.menuOpen) w.close()
         else w.open()
-        toggled = true
       } else if (typeof w.open === "function" && typeof w.close === "function") {
         // Plain open/close pair with no exposed state property.
         w.open()
-        toggled = true
-      }
-      if (!toggled && root.bar && typeof root.bar.shell.toggle === "function") {
-        // Last resort: route through the shell's canonical toggle so any
-        // widget with a registered IPC handler still responds.
-        root.bar.shell.toggle(id, "{}")
       }
     }
     root.menuOpen = false
@@ -657,8 +425,8 @@ BarWidget {
     readonly property string widgetId: String(modelData || "")
     readonly property var component: root.registryWidgets[widgetId] ? root.registryWidgets[widgetId].component : null
 
-    implicitWidth: loader.item ? loader.item.implicitWidth : root.button.implicitWidth
-    implicitHeight: loader.item ? loader.item.implicitHeight : root.button.implicitHeight
+    implicitWidth: loader.item ? loader.item.implicitWidth : button.implicitWidth
+    implicitHeight: loader.item ? loader.item.implicitHeight : button.implicitHeight
 
     Loader {
       id: loader
@@ -673,7 +441,7 @@ BarWidget {
         // Panel-style widgets anchor their panel to this item; point them at
         // the drawer button (in the bar window) so the panel opens underneath
         // the drawer.
-        if ("anchorItem" in w) w.anchorItem = root.button
+        if ("anchorItem" in w) w.anchorItem = button
         root.registerMounted(slot.widgetId, w)
       }
     }
@@ -903,6 +671,7 @@ Item {
 
             delegate: Item {
               id: drow
+              required property int index
               required property var modelData
               width: drawerColumn.width
               implicitHeight: 30
@@ -932,7 +701,7 @@ Item {
                 height: 3
                 radius: 1.5
                 color: Color.accent
-                visible: root.dragActive && !root.dragShowZone && root.dragId !== drow.rowId && root.dragTargetIndex === drow.index
+                visible: root.dragActive && root.dragId !== drow.rowId && root.dragTargetIndex === drow.index
               }
 
               Text {
@@ -1000,7 +769,7 @@ Item {
                 height: 3
                 radius: 1.5
                 color: Color.accent
-                visible: root.dragActive && !root.dragShowZone && root.dragTargetIndex === root.drawerVisibleIds.length
+                visible: root.dragActive && root.dragTargetIndex === root.drawerVisibleIds.length
               }
             }
 
@@ -1028,13 +797,14 @@ Item {
 
             delegate: Item {
               id: gtile
+              required property int index
               required property var modelData
               width: root.gridCellW
               height: root.tileHeight
 
               readonly property string rowId: gtile.modelData.id
               readonly property bool isHiddenItem: gtile.modelData.hidden
-              readonly property bool isDragTarget: root.dragActive && !root.dragShowZone && root.dragId !== gtile.rowId && root.dragTargetIndex === gtile.index
+              readonly property bool isDragTarget: root.dragActive && root.dragId !== gtile.rowId && root.dragTargetIndex === gtile.index
               property real pressX: 0
               property real pressY: 0
               property bool dragged: false
@@ -1166,18 +936,6 @@ Item {
           width: bodyFlick.width
           spacing: Style.space(4)
 
-          Text {
-            textFormat: Text.PlainText
-            visible: !root.hasFullRegistry
-            width: manageColumn.width
-            text: "Showing bar widgets only: enabling, disabling or adding other plugins needs a newer Omarchy plugin API (see project issue #2)."
-            color: Qt.darker(root.fg, 1.5)
-            font.family: root.ffont
-            font.pixelSize: Style.font.caption
-            font.italic: true
-            wrapMode: Text.Wrap
-          }
-
           Repeater {
             model: root.allPlugins
 
@@ -1188,18 +946,15 @@ Item {
               implicitHeight: 34
 
               readonly property string rowId: mrow.modelData
-              readonly property bool isWidget: root.isBarWidgetPlugin(mrow.rowId)
-              readonly property bool enabled: root.pluginEnabled(mrow.rowId)
+              readonly property bool isWidget: root.widgetComponent(mrow.rowId) !== null
               readonly property bool checked: root.isPending(mrow.rowId)
 
               Rectangle {
                 anchors.fill: parent
                 radius: Math.max(2, Style.cornerRadius)
-                color: root.isRemovePending(mrow.rowId)
-                  ? Util.alpha(Color.urgent, 0.18)
-                  : (mrowMouse.containsMouse
-                    ? Style.hoverFillFor(root.bar ? root.bar.foreground : Color.foreground, root.bar ? root.bar.foreground : Color.foreground)
-                    : "transparent")
+                color: mrowMouse.containsMouse
+                  ? Style.hoverFillFor(root.bar ? root.bar.foreground : Color.foreground, root.bar ? root.bar.foreground : Color.foreground)
+                  : "transparent"
               }
 
               BorderSurface {
@@ -1275,54 +1030,6 @@ Item {
                   onClicked: root.toggleHiddenView(mrow.rowId)
                 }
 
-                Button {
-                  width: 24
-                  height: 24
-                  visible: root.hasFullRegistry
-                  text: "\uf00c"
-                  tooltipText: mrow.enabled ? "Already enabled" : "Enable plugin"
-                  foreground: root.bar ? root.bar.foreground : Color.foreground
-                  opacity: mrow.enabled ? 0.35 : 1.0
-                  horizontalPadding: 0
-                  verticalPadding: 0
-                  onClicked: {
-                    if (!mrow.enabled) root.enablePluginNow(mrow.rowId)
-                  }
-                }
-
-                Button {
-                  width: 24
-                  height: 24
-                  visible: root.hasFullRegistry
-                  text: "\uf00d"
-                  tooltipText: root.canDisable(mrow.rowId) ? "Disable plugin" : "Cannot disable"
-                  foreground: root.bar ? root.bar.foreground : Color.foreground
-                  opacity: root.canDisable(mrow.rowId) ? 1.0 : 0.35
-                  horizontalPadding: 0
-                  verticalPadding: 0
-                  onClicked: {
-                    if (root.canDisable(mrow.rowId)) root.disablePluginNow(mrow.rowId)
-                  }
-                }
-
-                Button {
-                  width: 24
-                  height: 24
-                  visible: root.hasFullRegistry
-                  text: "\uf1f8"
-                  tooltipText: root.isFirstPartyPlugin(mrow.rowId)
-                    ? "Built-in plugin, cannot be removed"
-                    : (root.isRemovePending(mrow.rowId) ? "Marked for removal: click to cancel" : "Remove plugin")
-                  foreground: root.isRemovePending(mrow.rowId)
-                    ? Color.accent
-                    : Color.foreground
-                  opacity: root.isFirstPartyPlugin(mrow.rowId) ? 0.35 : 1.0
-                  horizontalPadding: 0
-                  verticalPadding: 0
-                  onClicked: {
-                    if (!root.isFirstPartyPlugin(mrow.rowId)) root.toggleRemovePending(mrow.rowId)
-                  }
-                }
               }
             }
           }
@@ -1362,380 +1069,25 @@ Item {
     }
   }
 
-  // --- config sync -----------------------------------------------------------
-  //
-  // A plugin listed in the drawer must not render on the bar, but it still
-  // needs to stay *enabled* so its component stays loaded and its service
-  // keeps running. The bar widget registry only holds enabled plugins, so
-  // hiding a widget moves it out of the bar layout and into `plugins[]`
-  // (enabled but not rendered); showing it does the reverse. On load we
-  // reconcile once so an existing shell.json catches up automatically.
+  // --- persistence -----------------------------------------------------------
 
   function persistWidgets(list) {
     root.persistOwnSettings({ widgets: list.slice() })
   }
 
   function moveWidgetToIndex(id, toIndex) {
-    var list = root.configuredIds.slice()
-    var fi = list.indexOf(id)
-    if (fi === -1) return
-    if (toIndex < 0) return
-    if (toIndex > list.length) toIndex = list.length
-    if (fi === toIndex || fi + 1 === toIndex) return
-    list.splice(fi, 1)
-    var insertAt = toIndex
-    if (fi < toIndex) insertAt = toIndex - 1
-    if (insertAt > list.length) insertAt = list.length
-    list.splice(insertAt, 0, id)
-    root.persistWidgets(list)
-  }
-
-  // Broad, whole-config mutation. Since Omarchy 4.0.3, shell.mutateShellConfig
-  // requires the caller's manifest to declare kind "bar" (a full replacement
-  // bar): a bar-widget-kind plugin like this one now gets `false` back and
-  // nothing is written (Omarchy-drawer#2). Kept for hosts/contexts where it
-  // still works; callers below that rely on it for moving *other* widgets on
-  // or off the bar are a known gap until Omarchy exposes a narrower
-  // capability for that. Persisting this plugin's own entry does not need
-  // this path any more: see persistOwnSettings above.
-  function mutateConfig(mutator) {
-    var shell = root.bar && root.bar.shell
-    if (!shell || typeof shell.mutateShellConfig !== "function") return
-    shell.mutateShellConfig(mutator)
+    var list = root.configuredIds
+    var next = Drawer.reorder(list, root.drawerVisibleIds, id, toIndex)
+    if (next !== list) root.persistWidgets(next)
   }
 
   function layoutHas(id) {
-    var key = String(id || "")
-    var sections = root.barLayoutSections()
-    if (!sections) return false
-    var names = ["left", "center", "right"]
-    for (var s = 0; s < names.length; s++) {
-      var arr = sections[names[s]]
-      if (!Array.isArray(arr)) continue
-      for (var i = 0; i < arr.length; i++) {
-        if (arr[i] && String(arr[i].id || "") === key) return true
-      }
-    }
-    return false
-  }
-
-  // config.plugins[] (the disabled-but-installed list) isn't part of the
-  // public bar.layoutConfig snapshot, so this only works where shellConfig is
-  // still reachable; it degrades to "not found" otherwise, which is the safe
-  // default here (see the callers below).
-  function pluginsHas(id) {
-    var key = String(id || "")
-    var shell = root.bar && root.bar.shell
-    var config = shell ? shell.shellConfig : null
-    if (!config || !Array.isArray(config.plugins)) return false
-    for (var i = 0; i < config.plugins.length; i++) {
-      if (config.plugins[i] && String(config.plugins[i].id || "") === key) return true
-    }
-    return false
-  }
-
-  function removeFromLayoutAndKeepEnabled(key) {
-    var shell = root.bar && root.bar.shell
-    if (!shell || !shell.shellConfig) return
-    var inLayout = root.layoutHas(key)
-    var inPlugins = root.pluginsHas(key)
-    if (!inLayout && inPlugins) return
-    var sections = ["left", "center", "right"]
-    root.mutateConfig(function(c) {
-      if (!c) return
-      if (c.bar && c.bar.layout) {
-        for (var s = 0; s < sections.length; s++) {
-          var a = c.bar.layout[sections[s]]
-          if (!Array.isArray(a)) continue
-          var kept = []
-          for (var j = 0; j < a.length; j++) {
-            if (!(a[j] && String(a[j].id || "") === key)) kept.push(a[j])
-          }
-          c.bar.layout[sections[s]] = kept
-        }
-      }
-      if (Array.isArray(c.plugins)) {
-        var exists = false
-        for (var k = 0; k < c.plugins.length; k++) {
-          if (c.plugins[k] && String(c.plugins[k].id || "") === key) { exists = true; break }
-        }
-        if (!exists) c.plugins.push({ id: key })
-      }
-    })
-  }
-
-  function removeFromPluginsAndAddToLayout(key) {
-    var shell = root.bar && root.bar.shell
-    if (!shell || !shell.shellConfig) return
-    var inLayout = root.layoutHas(key)
-    var inPlugins = root.pluginsHas(key)
-    if (inLayout && !inPlugins) return
-    root.mutateConfig(function(c) {
-      if (!c) return
-      if (Array.isArray(c.plugins)) {
-        var kept = []
-        for (var j = 0; j < c.plugins.length; j++) {
-          if (!(c.plugins[j] && String(c.plugins[j].id || "") === key)) kept.push(c.plugins[j])
-        }
-        c.plugins = kept
-      }
-      if (!inLayout && c.bar && c.bar.layout) {
-        var right = c.bar.layout.right
-        if (!Array.isArray(right)) right = []
-        var insertAt = right.length
-        for (var k = 0; k < right.length; k++) {
-          if (right[k] && String(right[k].id || "") === "omarchy.power") { insertAt = k; break }
-        }
-        right.splice(insertAt, 0, { id: key })
-        c.bar.layout.right = right
-      }
-    })
+    return Drawer.layoutIds(root.barLayout).indexOf(String(id || "")) !== -1
   }
 
   function setDrawer(id, hide) {
     var key = String(id || "")
     if (!key) return
-    var list = root.configuredIds.slice()
-    var idx = list.indexOf(key)
-    if (hide && idx === -1) list.push(key)
-    else if (!hide && idx !== -1) list.splice(idx, 1)
-    if (hide) root.removeFromLayoutAndKeepEnabled(key)
-    else root.removeFromPluginsAndAddToLayout(key)
-    root.persistWidgets(list)
+    root.persistWidgets(Drawer.withMember(root.configuredIds, key, hide))
   }
-
-  // --- plugin enable / disable / remove -------------------------------------
-  //
-  // Beyond drawer membership, the edit menu toggles a plugin's *enabled*
-  // state. Bar-widget plugins are enabled into the drawer (config-only, so
-  // the bar is not rebuilt and the open menu survives); everything else goes
-  // through the plugin registry's setEnabled. Removal is staged like drawer
-  // membership: the bin click only marks the plugin (icon turns grey), and
-  // everything marked is deleted together when the user leaves edit mode:
-  // plugin directory removed, config references cleaned, one registry reload.
-
-  function removeFromDisabledPlugins(key) {
-    root.mutateConfig(function(c) {
-      if (!c || !Array.isArray(c.disabledPlugins)) return
-      var kept = []
-      for (var i = 0; i < c.disabledPlugins.length; i++) {
-        if (String(c.disabledPlugins[i] || "") !== key) kept.push(c.disabledPlugins[i])
-      }
-      c.disabledPlugins = kept
-    })
-  }
-
-  function enablePluginNow(id) {
-    var key = String(id || "")
-    if (!key || root.pluginEnabled(key)) return
-    if (root.isBarWidgetPlugin(key)) {
-      root.setDrawer(key, true)
-      root.removeFromDisabledPlugins(key)
-      if (root.pendingDrawerIds.indexOf(key) === -1)
-        root.pendingDrawerIds = root.pendingDrawerIds.concat([key])
-    } else {
-      var reg = root.bar && root.bar.shell && root.bar.shell.pluginRegistry
-      if (reg && typeof reg.setEnabled === "function") reg.setEnabled(key, true)
-    }
-    root.manageRevision++
-  }
-
-  function disablePluginNow(id) {
-    var key = String(id || "")
-    if (!key || !root.canDisable(key)) return
-    var pending = root.pendingDrawerIds.slice()
-    var pi = pending.indexOf(key)
-    if (pi !== -1) { pending.splice(pi, 1); root.pendingDrawerIds = pending }
-    var configured = root.configuredIds.slice()
-    var ci = configured.indexOf(key)
-    if (ci !== -1) { configured.splice(ci, 1); root.persistWidgets(configured) }
-    var reg = root.bar && root.bar.shell && root.bar.shell.pluginRegistry
-    if (reg && typeof reg.setEnabled === "function") reg.setEnabled(key, false)
-    root.manageRevision++
-  }
-
-  // Strip every config reference to a plugin: bar layout, plugins[],
-  // disabledPlugins[], the drawer's widget list, and any staged membership.
-  function cleanPluginConfig(key) {
-    var pending = root.pendingDrawerIds.slice()
-    var pending = root.pendingDrawerIds.slice()
-    var pi = pending.indexOf(key)
-    if (pi !== -1) { pending.splice(pi, 1); root.pendingDrawerIds = pending }
-    var configured = root.configuredIds.slice()
-    var ci = configured.indexOf(key)
-    if (ci !== -1) { configured.splice(ci, 1); root.persistWidgets(configured) }
-    var sections = ["left", "center", "right"]
-    root.mutateConfig(function(c) {
-      if (!c) return
-      if (c.bar && c.bar.layout) {
-        for (var s = 0; s < sections.length; s++) {
-          var a = c.bar.layout[sections[s]]
-          if (!Array.isArray(a)) continue
-          var kept = []
-          for (var j = 0; j < a.length; j++) {
-            if (!(a[j] && String(a[j].id || "") === key)) kept.push(a[j])
-          }
-          c.bar.layout[sections[s]] = kept
-        }
-      }
-      if (Array.isArray(c.plugins)) {
-        var pk = []
-        for (var k = 0; k < c.plugins.length; k++) {
-          if (!(c.plugins[k] && String(c.plugins[k].id || "") === key)) pk.push(c.plugins[k])
-        }
-        c.plugins = pk
-      }
-      if (Array.isArray(c.disabledPlugins)) {
-        var dk = []
-        for (var d = 0; d < c.disabledPlugins.length; d++) {
-          if (String(c.disabledPlugins[d] || "") !== key) dk.push(c.disabledPlugins[d])
-        }
-        c.disabledPlugins = dk
-      }
-    })
-    root.manageRevision++
-  }
-
-  // Apply every staged removal. omarchy-plugin-remove does the deleting, by
-  // plugin id: it confines itself to the plugin directory, unlinks symlinks and
-  // backs up anything that is not a git clone. It runs detached because the
-  // config cleanup below rebuilds the bar, which destroys this drawer and would
-  // kill a child process.
-  function commitRemoveChanges() {
-    var ids = root.pendingRemoveIds
-    if (!ids || ids.length === 0) return
-    root.pendingRemoveIds = []
-    for (var i = 0; i < ids.length; i++) {
-      var key = String(ids[i] || "")
-      if (!key) continue
-      Quickshell.execDetached(["omarchy-plugin-remove", key, "--yes"])
-      root.cleanPluginConfig(key)
-    }
-    root.reloadPlugins()
-  }
-
-  function reloadPlugins() {
-    var shell = root.bar && root.bar.shell
-    if (shell && typeof shell.reloadPlugins === "function") shell.reloadPlugins()
-    else {
-      var reg = root.bar && root.bar.shell && root.bar.shell.pluginRegistry
-      if (reg && typeof reg.rescan === "function") reg.rescan()
-    }
-  }
-
-  // Reconcile on load: every configured id stays enabled via plugins[] so the
-  // drawer can mount it. This only *enables*; it never moves a widget off the
-  // bar: if the user placed a configured widget on the bar, it stays there.
-  function syncHiddenFromLayout() {
-    var configured = root.configuredIds
-    for (var i = 0; i < configured.length; i++) {
-      root.ensureConfiguredEnabled(configured[i])
-    }
-  }
-
-  // Ensure a configured widget is enabled (in plugins[]) so the drawer can
-  // mount it. Bar placement is never touched here.
-  function ensureConfiguredEnabled(key) {
-    var shell = root.bar && root.bar.shell
-    if (!shell || !shell.shellConfig) return
-    if (root.layoutHas(key)) return
-    if (root.pluginsHas(key)) return
-    root.mutateConfig(function(c) {
-      if (!c) return
-      if (!Array.isArray(c.plugins)) c.plugins = []
-      var exists = false
-      for (var k = 0; k < c.plugins.length; k++) {
-        if (c.plugins[k] && String(c.plugins[k].id || "") === key) { exists = true; break }
-      }
-      if (!exists) c.plugins.push({ id: key })
-    })
-  }
-
-  // Auto-park: whenever the plugin registry or config changes (plugin enabled
-  // on the bar from outside the drawer, a rescan, a shell.json reload), make
-  // sure every configured drawer widget is off the bar and parked in plugins[]
-  // so it stays enabled and the drawer can mount it. Debounced so a burst of
-  // config mutations from a single drawer edit settles into one pass; the
-  // guarded mutations make repeat passes no-ops.
-  property var reconcileRegistry: (root.bar && root.bar.shell && root.bar.shell.pluginRegistry) || null
-
-  onBarChanged: root.reconcileRegistry = (root.bar && root.bar.shell && root.bar.shell.pluginRegistry) || null
-
-  Connections {
-    target: root.reconcileRegistry
-    function onPluginsChanged() { reconcileTimer.restart() }
-  }
-
-  Timer {
-    id: reconcileTimer
-    interval: 150
-    onTriggered: root.syncHiddenFromLayout()
-  }
-
-  // The drawer button acts as a bar drop zone: dragging a bar widget onto it
-  // hides that widget into the drawer. The bar exposes registerDropZone for
-  // this, and only widgets with a registry entry can be hidden (custom command
-  // modules have no component to mount in the drawer).
-  // property var zoneToken: null
-
-  // function registerDropZone() {
-  //   root.unregisterDropZone()
-  //   var bar = root.bar
-  //   if (!bar || typeof bar.registerDropZone !== "function") return
-  //   root.zoneToken = {
-  //     // The drop target is the drawer button plus the open menu card, in bar
-  //     // window coordinates (menuPopup.relativeX/Y is its offset from the bar
-  //     // window), so dragging a bar widget onto either hides it into the drawer.
-  //     sceneRect: function() {
-  //       var rects = []
-  //       var bp = { x: 0, y: 0 }
-  //       try {
-  //         bp = button.mapToItem(null, 0, 0)
-  //       } catch (e) {
-  //       }
-  //       if (button.width > 0 && button.height > 0)
-  //         rects.push({ x: bp.x, y: bp.y, w: button.width, h: button.height })
-  //       if (menuPopup.visible) {
-  //         var rx = Number(menuPopup.relativeX) || 0
-  //         var ry = Number(menuPopup.relativeY) || 0
-  //         var rw = Number(menuPopup.width) || 0
-  //         var rh = Number(menuPopup.height) || 0
-  //         if (rw > 0 && rh > 0) rects.push({ x: rx, y: ry, w: rw, h: rh })
-  //       }
-  //       if (rects.length === 0) return null
-  //       var minX = rects[0].x, minY = rects[0].y
-  //       var maxX = rects[0].x + rects[0].w, maxY = rects[0].y + rects[0].h
-  //       for (var i = 1; i < rects.length; i++) {
-  //         minX = Math.min(minX, rects[i].x); minY = Math.min(minY, rects[i].y)
-  //         maxX = Math.max(maxX, rects[i].x + rects[i].w); maxY = Math.max(maxY, rects[i].y + rects[i].h)
-  //       }
-  //       return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
-  //     },
-  //     drop: function(sourceSlot) {
-  //       if (!sourceSlot || !sourceSlot.moduleName) return
-  //       var key = String(sourceSlot.moduleName)
-  //       if (key === root.moduleName) return
-  //       if (!root.registryWidgets[key]) return
-  //       if (!root.layoutHas(key)) return
-  //       root.setDrawer(key, true)
-  //     }
-  //   }
-  //   bar.registerDropZone(root.zoneToken)
-  // }
-
-  // function unregisterDropZone() {
-  //   var bar = root.bar
-  //   if (bar && root.zoneToken && typeof bar.unregisterDropZone === "function")
-  //     bar.unregisterDropZone(root.zoneToken)
-  //   root.zoneToken = null
-  // }
-
-  // onBarChanged: root.registerDropZone()
-
-  Component.onCompleted: {
-    root.syncHiddenFromLayout()
-    // root.registerDropZone()
-  }
-
-  // Component.onDestruction: root.unregisterDropZone()
 }

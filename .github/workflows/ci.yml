@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Install tools (what an Omarchy install already has)
-        run: pacman -Syu --noconfirm --needed git jq shellcheck diffutils
+        run: pacman -Syu --noconfirm --needed git jq shellcheck diffutils nodejs
       - uses: actions/checkout@v4
       - name: Static checks
         env:

@@ -5,6 +5,18 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Removed
+- Enable, disable and remove buttons in the edit view. Omarchy no longer gives
+  bar widgets the access they needed, and `omarchy plugin` does all three.
+
+### Fixed
+- Hosted widgets get the drawer button as their anchor. They were getting
+  nothing, because of a bad reference.
+- Dragging lands where it shows: rows in the grid, and with hidden widgets in the
+  list, no longer put a widget in the wrong slot.
+- The edit list and widget scanning see every bar section, not just left, center
+  and right.
+
 ## [0.9.0] - 2026-11-01
 
 First development version of Redux. Numbering restarts here because the new
