@@ -86,6 +86,15 @@ refused --to-drawer third.party
 printf 'not json' >"$CONFIG"
 refused --to-drawer third.party
 
+# Another writer between the read and the write wins, and we say so.
+reset_config
+real_jq=$(command -v jq)
+printf '#!/bin/sh\n"%s" "$@"; rc=$?; printf " " >>"%s"; exit $rc\n' "$real_jq" "$CONFIG" >"$HOME/bin/jq"
+chmod +x "$HOME/bin/jq"
+if move --to-drawer third.party 2>/dev/null; then echo "not refused: concurrent write" >&2; exit 1; fi
+rm "$HOME/bin/jq"
+eq "other writer kept" "$(on_bar third.party)" "true"
+
 # A failure leaves no temp file beside the config.
 eq "no temp files" "$(find "$HOME/.config/omarchy" -name 'shell.json.??????' | wc -l)" "0"
 echo "move-widgets ok"

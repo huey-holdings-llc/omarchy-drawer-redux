@@ -27,7 +27,9 @@ config=$(readlink -f "$HOME/.config/omarchy/shell.json")
 
 # Same directory as the config, so the final mv is atomic.
 tmp=$(mktemp "$config.XXXXXX")
-trap 'rm -f "$tmp"' EXIT
+snapshot=$(mktemp "$config.XXXXXX")
+trap 'rm -f "$tmp" "$snapshot"' EXIT
+cp -p "$config" "$snapshot"
 
 jq --arg self "$self" \
   --argjson toDrawer "$(jq -n '$ARGS.positional' --args -- ${to_drawer[@]+"${to_drawer[@]}"})" \
@@ -69,9 +71,13 @@ jq --arg self "$self" \
     then error("a widget with several instances on the bar stays there") else . end
   | reduce $toDrawer[] as $id (.; park($id))
   | reduce $toBar[] as $id (.; unpark($id))
-' "$config" >"$tmp"
+' "$snapshot" >"$tmp"
 
+# The shell writes this file too. ponytail: it takes no lock we could share, so a
+# write in the instant between this check and the mv still loses; the window is
+# microseconds and the backup holds what it replaced.
+cmp -s "$config" "$snapshot" || fail "shell.json changed while moving, nothing written"
 chmod --reference="$config" "$tmp"
-cp -p "$config" "$config.drawer-backup"
+mv "$snapshot" "$config.drawer-backup"
 mv "$tmp" "$config"
 omarchy-shell shell reloadConfig >/dev/null 2>&1 || true
