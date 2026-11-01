@@ -675,7 +675,7 @@ BarWidget {
       onLoaded: {
         var w = loader.item
         if (!w) return
-        if ("bar" in w) w.bar = root.bar
+        if ("bar" in w) w.bar = Qt.binding(function() { return root.bar })
         if ("moduleName" in w) w.moduleName = slot.widgetId
         if ("settings" in w) w.settings = root.defaultsFor(slot.widgetId)
         // Panel-style widgets anchor their panel to this item; point them at
@@ -1088,7 +1088,7 @@ Item {
                 onLoaded: {
                   var w = preview.item
                   if (!w) return
-                  if ("bar" in w) w.bar = root.bar
+                  if ("bar" in w) w.bar = Qt.binding(function() { return root.bar })
                   if ("moduleName" in w) w.moduleName = gtile.rowId
                   if ("settings" in w) w.settings = root.defaultsFor(gtile.rowId)
                 }
