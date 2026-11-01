@@ -66,6 +66,9 @@ BarWidget {
   // --- menu state ------------------------------------------------------------
 
   property bool menuOpen: false
+  // The host finds a panel widget by this, which is what makes `omarchy-shell
+  // shell toggle <id>` work from a hotkey.
+  readonly property bool opened: root.menuOpen
   property bool manageMode: false
 
   // Bumped whenever the edit menu closes so the drawer/plugin lists re-evaluate
@@ -93,7 +96,7 @@ BarWidget {
 
   // --- view + hide state -----------------------------------------------------
 
-  property string viewMode: "grid"
+  property string viewMode: root.entrySetting("viewMode", "grid") === "list" ? "list" : "grid"
   property bool showHidden: false
 
   readonly property color fg: root.bar ? root.bar.foreground : Color.foreground
@@ -108,6 +111,17 @@ BarWidget {
   readonly property int tileSize: Style.space(64)
   readonly property int tileGap: Style.space(10)
   readonly property int tileHeight: Style.space(74)
+  // The card tops out here and the body scrolls past it.
+  readonly property real maxBodyHeight: Math.max(Style.space(80),
+    menuPopup.fittedContentHeight(Style.space(480)) - menuPopup.verticalContentInset - headerRow.height - menuColumn.spacing)
+  readonly property int listIconSize: Style.space(40)
+  readonly property int listRowHeight: 30
+
+  FontMetrics {
+    id: listMetrics
+    font.family: root.ffont
+    font.pixelSize: Style.font.bodySmall
+  }
 
   // Columns and stretched cell width derived from the actual grid width, so the
   // tiles fill the row instead of leaving a gap on the right.
@@ -214,6 +228,11 @@ BarWidget {
     root.persistOwnSettings(o)
   }
 
+  function setViewMode(mode) {
+    root.viewMode = mode
+    root.persistEntrySetting("viewMode", mode)
+  }
+
   function setGridColumns(n) {
     n = Math.max(1, Math.min(8, Math.round(n)))
     if (n === root.gridColumnSetting) return
@@ -238,16 +257,20 @@ BarWidget {
     return entry && entry.component ? entry.component : null
   }
 
-  // Drawer width adapts to the screen: the grid expands to fill most of the
-  // available width (so cells can stretch), while the list view stays compact.
+  // The list hugs its longest row. The grid and the edit view follow the scale
+  // setting, so its controls change something visible.
   function drawerContentWidth() {
+    if (root.viewMode === "list" && !root.manageMode) {
+      var widths = root.drawerDisplayIds.map(function(row) {
+        return listMetrics.advanceWidth(root.displayName(row.id))
+      })
+      var chrome = root.listIconSize + Style.space(24) + (menuPopup.padding + Style.space(2)) * 2
+      return menuPopup.fittedContentWidth(Drawer.listWidth(widths, chrome, Style.space(240), Style.space(460)))
+    }
     var avail = menuPopup.availableCardWidth
     if (!avail || avail <= 0) avail = Style.space(560)
-    var w = avail * root.windowScale
-    if (w < Style.space(280)) w = Style.space(280)
-    return menuPopup.fittedContentWidth(w)
+    return menuPopup.fittedContentWidth(Math.max(avail * root.windowScale, Style.space(380)))
   }
-
 
   // Move every staged difference between the drawer and the bar. Returns true
   // when anything changed (the config mutation itself triggers the hot reload
@@ -300,7 +323,7 @@ BarWidget {
       root.dragGhostX = drop.col * cellW
       root.dragGhostY = drop.row * cellH
     } else {
-      var pitch = 30 + Style.space(4)
+      var pitch = root.listRowHeight + Style.space(4)
       var rowY = drawerColumn.mapFromItem(handle, mouseX, mouseY).y
       root.dragTargetIndex = Drawer.listDrop(rowY, pitch, count)
       root.dragGhostX = 0
@@ -326,8 +349,44 @@ BarWidget {
 
   function open() {
     root.pendingDrawerIds = root.configuredIds.slice()
+    root.cursorIndex = -1
+    root.grabPreviews()
     root.menuOpen = true
     root.manageMode = false
+  }
+
+  // Keyboard cursor over whatever the card is showing.
+  property int cursorIndex: -1
+  onManageModeChanged: root.cursorIndex = -1
+  onViewModeChanged: root.cursorIndex = -1
+
+  function moveCursor(dx, dy) {
+    var grid = !root.manageMode && root.viewMode === "grid"
+    var cols = grid ? root.gridCols : 1
+    var count = root.manageMode ? root.allPlugins.length : root.drawerDisplayIds.length
+    root.cursorIndex = Drawer.moveCursor(root.cursorIndex, grid ? dx : 0, dy, cols, count)
+    if (root.cursorIndex < 0) return
+    var pitch = root.manageMode ? 34 + Style.space(4)
+      : (grid ? root.tileHeight + root.tileGap : root.listRowHeight + Style.space(4))
+    var row = grid ? Math.floor(root.cursorIndex / cols) : root.cursorIndex
+    bodyFlick.contentY = Drawer.scrollTo(bodyFlick.contentY, row * pitch, pitch, bodyFlick.height)
+  }
+
+  function activateCursor() {
+    if (root.cursorIndex < 0) return
+    if (root.manageMode) {
+      var id = root.allPlugins[root.cursorIndex]
+      if (root.widgetComponent(id)) root.togglePending(id)
+      return
+    }
+    var row = root.drawerDisplayIds[root.cursorIndex]
+    if (!row) return
+    if (row.hidden) root.toggleHiddenView(row.id)
+    else root.openWidget(row.id)
+  }
+  function toggle() {
+    if (root.menuOpen) root.close()
+    else root.open()
   }
   function close() {
     root.commitDrawerChanges()
@@ -353,7 +412,9 @@ BarWidget {
   Item {
     id: hiddenHost
     anchors.fill: button
-    visible: false
+    // Opacity, not visible: an invisible item cannot be grabbed for a preview.
+    // The button sits on top, so these never take a click.
+    opacity: 0
 
     Repeater {
       model: root.hiddenIds
@@ -368,9 +429,7 @@ BarWidget {
     text: "\uf0c9"
     tooltipText: "Omarchy Drawer Redux"
     onPressed: function(b) {
-      if (b !== Qt.LeftButton) return
-      if (root.menuOpen) root.close()
-      else root.open()
+      if (b === Qt.LeftButton) root.toggle()
     }
   }
 
@@ -451,618 +510,661 @@ BarWidget {
     }
   }
 
+  // How a widget looks on the bar, as a picture of the mounted instance. A live
+  // copy would double its IPC handlers, and its panel cannot anchor inside the
+  // card's window.
+  property var previewGrabs: ({})
+
+  function grabPreviews() {
+    for (var id in root.mountedMap) root.grabPreview(id)
+  }
+
+  function grabPreview(id) {
+    var w = root.mountedItem(id)
+    if (!w || w.width <= 0 || w.height <= 0) return
+    w.grabToImage(function(result) {
+      var next = Object.assign({}, root.previewGrabs)
+      next[id] = result
+      root.previewGrabs = next
+    })
+  }
+
+  component WidgetPreview: Item {
+    id: previewBox
+    required property string widgetId
+    readonly property var grab: root.previewGrabs[previewBox.widgetId] || null
+    clip: true
+
+    Image {
+      id: previewImage
+      anchors.centerIn: parent
+      width: Math.min(implicitWidth, previewBox.width)
+      height: Math.min(implicitHeight, previewBox.height)
+      fillMode: Image.PreserveAspectFit
+      source: previewBox.grab ? previewBox.grab.url : ""
+    }
+
+    Text {
+      textFormat: Text.PlainText
+      visible: previewImage.status !== Image.Ready
+      anchors.fill: parent
+      horizontalAlignment: Text.AlignHCenter
+      verticalAlignment: Text.AlignVCenter
+      text: root.pluginGlyph(previewBox.widgetId)
+      color: root.fg
+      font.family: root.ffont
+      font.pixelSize: Math.round(previewBox.height * 0.6)
+      font.bold: true
+    }
+  }
+
   // --- menu ------------------------------------------------------------------
 
-  PopupCard {
+  KeyboardPanel {
     id: menuPopup
     anchorItem: button
     owner: root
     bar: root.bar
     open: root.menuOpen
+    focusTarget: keyCatcher
     contentWidth: root.drawerContentWidth()
     contentHeight: menuPopup.fittedContentHeight(menuColumn.implicitHeight, Style.space(480))
 
-    Column {
-      id: menuColumn
+    PanelKeyCatcher {
+      id: keyCatcher
       anchors.fill: parent
-      spacing: Style.space(6)
+      onCloseRequested: root.close()
+      onMoveRequested: function(dx, dy) { root.moveCursor(dx, dy) }
+      onActivateRequested: root.activateCursor()
 
-Item {
-          id: headerRow
-          width: menuColumn.width
-          implicitHeight: 32
+      Column {
+        id: menuColumn
+        anchors.fill: parent
+        spacing: Style.space(6)
 
-          Row {
-            id: titleGroup
-            visible: !root.manageMode
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.left: parent.left
-            anchors.right: penButton.left
-            anchors.rightMargin: Style.space(8)
-            spacing: Style.space(10)
-            clip: true
-
-            Text {
-              textFormat: Text.PlainText
-              id: titleText
-              anchors.verticalCenter: parent.verticalCenter
-              text: "Omarchy Drawer Redux"
-              color: root.fg
-              font.family: root.ffont
-              font.pixelSize: Style.font.body
-              font.bold: true
-              elide: Text.ElideRight
-            }
-          }
-
-          Row {
-            id: manageControls
-            visible: root.manageMode
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(12)
+  Item {
+            id: headerRow
+            width: menuColumn.width
+            implicitHeight: 32
 
             Row {
+              id: titleGroup
+              visible: !root.manageMode
               anchors.verticalCenter: parent.verticalCenter
-              spacing: Style.space(3)
+              anchors.left: parent.left
+              anchors.right: viewModeButton.left
+              anchors.rightMargin: Style.space(8)
+              spacing: Style.space(10)
+              clip: true
 
               Text {
                 textFormat: Text.PlainText
+                id: titleText
                 anchors.verticalCenter: parent.verticalCenter
-                text: "Grid"
+                text: "Omarchy Drawer Redux"
                 color: root.fg
                 font.family: root.ffont
-                font.pixelSize: Style.font.caption
-              }
-
-              Button {
-                width: 20
-                height: 18
-                text: "-"
-                horizontalPadding: 0
-                verticalPadding: 0
-                fontSize: 12
-                tooltipText: "Smaller grid"
-                onClicked: root.setGridColumns(root.gridColumnSetting - 1)
-              }
-
-              Text {
-                textFormat: Text.PlainText
-                anchors.verticalCenter: parent.verticalCenter
-                width: Style.space(44)
-                horizontalAlignment: Text.AlignHCenter
-                text: root.gridColumnSetting + "x" + root.gridColumnSetting
-                color: root.fg
-                font.family: root.ffont
-                font.pixelSize: Style.font.caption
+                font.pixelSize: Style.font.body
                 font.bold: true
-              }
-
-              Button {
-                width: 20
-                height: 18
-                text: "+"
-                horizontalPadding: 0
-                verticalPadding: 0
-                fontSize: 12
-                tooltipText: "Larger grid"
-                onClicked: root.setGridColumns(root.gridColumnSetting + 1)
-              }
-            }
-
-            Row {
-              anchors.verticalCenter: parent.verticalCenter
-              spacing: Style.space(3)
-
-              Text {
-                textFormat: Text.PlainText
-                anchors.verticalCenter: parent.verticalCenter
-                text: "Window"
-                color: root.fg
-                font.family: root.ffont
-                font.pixelSize: Style.font.caption
-              }
-
-              Button {
-                width: 20
-                height: 18
-                text: "-"
-                horizontalPadding: 0
-                verticalPadding: 0
-                fontSize: 12
-                tooltipText: "Smaller window"
-                onClicked: root.setWindowScale(root.windowScale - 0.1)
-              }
-
-              Text {
-                textFormat: Text.PlainText
-                anchors.verticalCenter: parent.verticalCenter
-                width: Style.space(40)
-                horizontalAlignment: Text.AlignHCenter
-                text: Math.round(root.windowScale * 100) + "%"
-                color: root.fg
-                font.family: root.ffont
-                font.pixelSize: Style.font.caption
-                font.bold: true
-              }
-
-              Button {
-                width: 20
-                height: 18
-                text: "+"
-                horizontalPadding: 0
-                verticalPadding: 0
-                fontSize: 12
-                tooltipText: "Larger window"
-                onClicked: root.setWindowScale(root.windowScale + 0.1)
-              }
-            }
-          }
-
-          Button {
-            id: viewModeButton
-            visible: !root.manageMode
-            anchors.right: eyeButton.left
-            anchors.rightMargin: Style.space(4)
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.viewMode === "grid" ? "\uf0ca" : "\uf009"
-            tooltipText: root.viewMode === "grid" ? "Switch to list view" : "Switch to grid view"
-            foreground: root.fg
-            horizontalPadding: 8
-            verticalPadding: 3
-            fontSize: Style.font.bodySmall
-            onClicked: root.viewMode = root.viewMode === "grid" ? "list" : "grid"
-          }
-
-          Button {
-            id: eyeButton
-            visible: !root.manageMode
-            anchors.right: penButton.left
-            anchors.rightMargin: Style.space(4)
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.showHidden ? "\uf06e" : "\uf070"
-            tooltipText: root.showHidden ? "Hide hidden plugins" : "Show hidden plugins"
-            foreground: root.showHidden ? Color.accent : root.fg
-            horizontalPadding: 8
-            verticalPadding: 3
-            fontSize: Style.font.bodySmall
-            onClicked: root.showHidden = !root.showHidden
-          }
-
-          Button {
-            id: penButton
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            text: "\uf040"
-            foreground: root.fg
-            horizontalPadding: 8
-            verticalPadding: 3
-            fontSize: Style.font.bodySmall
-            onClicked: {
-              root.pendingDrawerIds = root.configuredIds.slice()
-              root.manageMode = !root.manageMode
-            }
-          }
-        }
-
-       Flickable {
-        id: bodyFlick
-        width: menuColumn.width
-        height: root.manageMode
-          ? Math.min(manageColumn.implicitHeight, Math.max(80, Style.space(300)))
-          : (root.viewMode === "grid" ? drawerGrid.implicitHeight : drawerColumn.implicitHeight)
-        contentWidth: width
-        contentHeight: root.manageMode ? manageColumn.implicitHeight : (root.viewMode === "grid" ? drawerGrid.implicitHeight : drawerColumn.implicitHeight)
-        clip: true
-        boundsBehavior: Flickable.StopAtBounds
-        flickableDirection: Flickable.VerticalFlick
-        interactive: contentHeight > height
-
-        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-        Column {
-          id: drawerColumn
-          visible: !root.manageMode && root.viewMode === "list"
-          width: bodyFlick.width
-          spacing: Style.space(4)
-
-          Repeater {
-            model: root.drawerDisplayIds
-
-            delegate: Item {
-              id: drow
-              required property int index
-              required property var modelData
-              width: drawerColumn.width
-              implicitHeight: 30
-
-              readonly property string rowId: drow.modelData.id
-              readonly property bool isHiddenItem: drow.modelData.hidden
-              property real pressX: 0
-              property real pressY: 0
-              property bool dragged: false
-
-              opacity: (root.dragId === drow.rowId ? 0.4 : 1.0) * (drow.isHiddenItem ? 0.5 : 1.0)
-
-              Rectangle {
-                anchors.fill: parent
-                radius: Math.max(2, Style.cornerRadius)
-                color: root.dragActive && root.dragTargetIndex === drow.index
-                  ? Util.alpha(Color.accent, 0.18)
-                  : (!root.dragActive && drowMouse.containsMouse
-                      ? Style.hoverFillFor(root.fg, root.fg)
-                      : "transparent")
-              }
-
-              Rectangle {
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: 3
-                radius: 1.5
-                color: Color.accent
-                visible: root.dragActive && root.dragId !== drow.rowId && root.dragTargetIndex === drow.index
-              }
-
-              Text {
-                textFormat: Text.PlainText
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.leftMargin: Style.space(8)
-                anchors.rightMargin: Style.space(8)
-                text: root.displayName(drow.rowId)
-                color: root.fg
-                font.family: root.ffont
-                font.pixelSize: Style.font.bodySmall
                 elide: Text.ElideRight
               }
+            }
 
-              MouseArea {
-                id: drowMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                preventStealing: true
-                cursorShape: root.dragStarted ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+            Row {
+              id: manageControls
+              visible: root.manageMode
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(12)
 
-                onPressed: function(mouse) {
-                  drow.dragged = false
-                  if (drow.isHiddenItem || root.showHidden) return
-                  drow.pressX = mouse.x
-                  drow.pressY = mouse.y
-                  root.dragStart(drow.rowId)
+              Row {
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(3)
+
+                Text {
+                  textFormat: Text.PlainText
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: "Grid"
+                  color: root.fg
+                  font.family: root.ffont
+                  font.pixelSize: Style.font.caption
                 }
 
-                onPositionChanged: function(mouse) {
-                  if (!(mouse.buttons & Qt.LeftButton)) return
-                  if (!drow.dragged && (Math.abs(mouse.x - drow.pressX) + Math.abs(mouse.y - drow.pressY)) >= root.dragThreshold)
-                    drow.dragged = true
-                  if (drow.dragged) root.dragMove(drowMouse, mouse.x, mouse.y)
+                Button {
+                  width: 20
+                  height: 18
+                  text: "-"
+                  horizontalPadding: 0
+                  verticalPadding: 0
+                  fontSize: 12
+                  tooltipText: "Smaller grid"
+                  onClicked: root.setGridColumns(root.gridColumnSetting - 1)
                 }
 
-                onReleased: {
-                  if (root.dragActive) root.dragEnd()
+                Text {
+                  textFormat: Text.PlainText
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: Style.space(44)
+                  horizontalAlignment: Text.AlignHCenter
+                  text: root.gridColumnSetting + "x" + root.gridColumnSetting
+                  color: root.fg
+                  font.family: root.ffont
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
                 }
 
-                onCanceled: {
-                  root.dragCancel()
+                Button {
+                  width: 20
+                  height: 18
+                  text: "+"
+                  horizontalPadding: 0
+                  verticalPadding: 0
+                  fontSize: 12
+                  tooltipText: "Larger grid"
+                  onClicked: root.setGridColumns(root.gridColumnSetting + 1)
+                }
+              }
+
+              Row {
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(3)
+
+                Text {
+                  textFormat: Text.PlainText
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: "Window"
+                  color: root.fg
+                  font.family: root.ffont
+                  font.pixelSize: Style.font.caption
                 }
 
-                onClicked: {
-                  if (!drow.dragged) {
-                    if (drow.isHiddenItem) root.toggleHiddenView(drow.rowId)
-                    else root.openWidget(drow.rowId)
+                Button {
+                  width: 20
+                  height: 18
+                  text: "-"
+                  horizontalPadding: 0
+                  verticalPadding: 0
+                  fontSize: 12
+                  tooltipText: "Smaller window"
+                  onClicked: root.setWindowScale(root.windowScale - 0.1)
+                }
+
+                Text {
+                  textFormat: Text.PlainText
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: Style.space(40)
+                  horizontalAlignment: Text.AlignHCenter
+                  text: Math.round(root.windowScale * 100) + "%"
+                  color: root.fg
+                  font.family: root.ffont
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+
+                Button {
+                  width: 20
+                  height: 18
+                  text: "+"
+                  horizontalPadding: 0
+                  verticalPadding: 0
+                  fontSize: 12
+                  tooltipText: "Larger window"
+                  onClicked: root.setWindowScale(root.windowScale + 0.1)
+                }
+              }
+            }
+
+            Button {
+              id: viewModeButton
+              visible: !root.manageMode
+              anchors.right: eyeButton.left
+              anchors.rightMargin: Style.space(4)
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.viewMode === "grid" ? "\uf0ca" : "\uf009"
+              tooltipText: root.viewMode === "grid" ? "Switch to list view" : "Switch to grid view"
+              foreground: root.fg
+              horizontalPadding: 8
+              verticalPadding: 3
+              fontSize: Style.font.bodySmall
+              onClicked: root.setViewMode(root.viewMode === "grid" ? "list" : "grid")
+            }
+
+            Button {
+              id: eyeButton
+              visible: !root.manageMode
+              anchors.right: penButton.left
+              anchors.rightMargin: Style.space(4)
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.showHidden ? "\uf06e" : "\uf070"
+              tooltipText: root.showHidden ? "Hide hidden plugins" : "Show hidden plugins"
+              foreground: root.showHidden ? Color.accent : root.fg
+              horizontalPadding: 8
+              verticalPadding: 3
+              fontSize: Style.font.bodySmall
+              onClicked: root.showHidden = !root.showHidden
+            }
+
+            Button {
+              id: penButton
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              text: "\uf040"
+              foreground: root.fg
+              horizontalPadding: 8
+              verticalPadding: 3
+              fontSize: Style.font.bodySmall
+              onClicked: {
+                root.pendingDrawerIds = root.configuredIds.slice()
+                root.manageMode = !root.manageMode
+              }
+            }
+          }
+
+         Flickable {
+          id: bodyFlick
+          width: menuColumn.width
+          height: Math.min(contentHeight, root.maxBodyHeight)
+          contentWidth: width
+          contentHeight: root.manageMode ? manageColumn.implicitHeight : (root.viewMode === "grid" ? drawerGrid.implicitHeight : drawerColumn.implicitHeight)
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+          flickableDirection: Flickable.VerticalFlick
+          interactive: contentHeight > height
+
+          ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+          Column {
+            id: drawerColumn
+            visible: !root.manageMode && root.viewMode === "list"
+            width: bodyFlick.width
+            spacing: Style.space(4)
+
+            Repeater {
+              model: root.drawerDisplayIds
+
+              delegate: Item {
+                id: drow
+                required property int index
+                required property var modelData
+                width: drawerColumn.width
+                implicitHeight: root.listRowHeight
+
+                readonly property string rowId: drow.modelData.id
+                readonly property bool isHiddenItem: drow.modelData.hidden
+                property real pressX: 0
+                property real pressY: 0
+                property bool dragged: false
+
+                opacity: (root.dragId === drow.rowId ? 0.4 : 1.0) * (drow.isHiddenItem ? 0.5 : 1.0)
+
+                Rectangle {
+                  anchors.fill: parent
+                  radius: Math.max(2, Style.cornerRadius)
+                  color: root.dragActive && root.dragTargetIndex === drow.index
+                    ? Util.alpha(Color.accent, 0.18)
+                    : (!root.dragActive && (drowMouse.containsMouse || root.cursorIndex === drow.index)
+                        ? Style.hoverFillFor(root.fg, root.fg)
+                        : "transparent")
+                }
+
+                Rectangle {
+                  anchors.top: parent.top
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  height: 3
+                  radius: 1.5
+                  color: Color.accent
+                  visible: root.dragActive && root.dragId !== drow.rowId && root.dragTargetIndex === drow.index
+                }
+
+                WidgetPreview {
+                  id: drowIcon
+                  anchors.left: parent.left
+                  anchors.top: parent.top
+                  anchors.bottom: parent.bottom
+                  anchors.leftMargin: Style.space(4)
+                  width: root.listIconSize
+                  widgetId: drow.rowId
+                }
+
+                Text {
+                  textFormat: Text.PlainText
+                  anchors.verticalCenter: parent.verticalCenter
+                  anchors.left: drowIcon.right
+                  anchors.right: parent.right
+                  anchors.leftMargin: Style.space(8)
+                  anchors.rightMargin: Style.space(8)
+                  text: root.displayName(drow.rowId)
+                  color: root.fg
+                  font.family: root.ffont
+                  font.pixelSize: Style.font.bodySmall
+                  elide: Text.ElideRight
+                }
+
+                MouseArea {
+                  id: drowMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  preventStealing: true
+                  cursorShape: root.dragStarted ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+
+                  onPressed: function(mouse) {
+                    drow.dragged = false
+                    if (drow.isHiddenItem || root.showHidden) return
+                    drow.pressX = mouse.x
+                    drow.pressY = mouse.y
+                    root.dragStart(drow.rowId)
+                  }
+
+                  onPositionChanged: function(mouse) {
+                    if (!(mouse.buttons & Qt.LeftButton)) return
+                    if (!drow.dragged && (Math.abs(mouse.x - drow.pressX) + Math.abs(mouse.y - drow.pressY)) >= root.dragThreshold)
+                      drow.dragged = true
+                    if (drow.dragged) root.dragMove(drowMouse, mouse.x, mouse.y)
+                  }
+
+                  onReleased: {
+                    if (root.dragActive) root.dragEnd()
+                  }
+
+                  onCanceled: {
+                    root.dragCancel()
+                  }
+
+                  onClicked: {
+                    if (!drow.dragged) {
+                      if (drow.isHiddenItem) root.toggleHiddenView(drow.rowId)
+                      else root.openWidget(drow.rowId)
+                    }
                   }
                 }
               }
             }
+
+            Item {
+              width: drawerColumn.width
+              implicitHeight: Style.space(10)
+
+                Rectangle {
+                  anchors.top: parent.top
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  height: 3
+                  radius: 1.5
+                  color: Color.accent
+                  visible: root.dragActive && root.dragTargetIndex === root.drawerVisibleIds.length
+                }
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                visible: root.configuredIds.length === 0
+                width: drawerColumn.width
+                text: "No widgets hidden."
+                color: Qt.darker(root.fg, 1.5)
+                font.family: root.ffont
+                font.pixelSize: Style.font.bodySmall
+                font.italic: true
+              }
           }
 
-          Item {
-            width: drawerColumn.width
-            implicitHeight: Style.space(10)
+          Flow {
+            id: drawerGrid
+            visible: !root.manageMode && root.viewMode === "grid"
+            width: bodyFlick.width
+            spacing: root.tileGap
+            flow: Flow.LeftToRight
 
-              Rectangle {
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: 3
-                radius: 1.5
-                color: Color.accent
-                visible: root.dragActive && root.dragTargetIndex === root.drawerVisibleIds.length
+            Repeater {
+              model: root.drawerDisplayIds
+
+              delegate: Item {
+                id: gtile
+                required property int index
+                required property var modelData
+                width: root.gridCellW
+                height: root.tileHeight
+
+                readonly property string rowId: gtile.modelData.id
+                readonly property bool isHiddenItem: gtile.modelData.hidden
+                readonly property bool isDragTarget: root.dragActive && root.dragId !== gtile.rowId && root.dragTargetIndex === gtile.index
+                property real pressX: 0
+                property real pressY: 0
+                property bool dragged: false
+
+                opacity: (root.dragId === gtile.rowId ? 0.4 : 1.0) * (gtile.isHiddenItem ? 0.5 : 1.0)
+
+                Rectangle {
+                  anchors.fill: parent
+                  radius: Style.cornerRadius
+                  color: gtile.isDragTarget
+                    ? Util.alpha(Color.accent, 0.18)
+                    : (gtileMouse.containsMouse || root.cursorIndex === gtile.index ? Style.hoverFillFor(root.fg, root.fg) : "transparent")
+                }
+
+                Rectangle {
+                  anchors.top: parent.top
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  height: 3
+                  radius: 1.5
+                  color: Color.accent
+                  visible: gtile.isDragTarget
+                }
+
+                Text {
+                  textFormat: Text.PlainText
+                  id: label
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  anchors.bottom: parent.bottom
+                  anchors.bottomMargin: Style.space(6)
+                  width: parent.width - Style.space(8)
+                  horizontalAlignment: Text.AlignHCenter
+                  text: root.displayName(gtile.rowId)
+                  color: root.fg
+                  font.family: root.ffont
+                  font.pixelSize: Style.font.caption
+                  elide: Text.ElideRight
+                  wrapMode: Text.Wrap
+                  maximumLineCount: 2
+                }
+
+                WidgetPreview {
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.top: parent.top
+                  anchors.bottom: label.top
+                  anchors.bottomMargin: Style.space(2)
+                  widgetId: gtile.rowId
+                }
+
+                MouseArea {
+                  id: gtileMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  preventStealing: true
+                  cursorShape: root.dragStarted ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+
+                  onPressed: function(mouse) {
+                    gtile.dragged = false
+                    if (gtile.isHiddenItem || root.showHidden) return
+                    gtile.pressX = mouse.x
+                    gtile.pressY = mouse.y
+                    root.dragStart(gtile.rowId)
+                  }
+
+                  onPositionChanged: function(mouse) {
+                    if (!(mouse.buttons & Qt.LeftButton)) return
+                    if (!gtile.dragged && (Math.abs(mouse.x - gtile.pressX) + Math.abs(mouse.y - gtile.pressY)) >= root.dragThreshold)
+                      gtile.dragged = true
+                    if (gtile.dragged) root.dragMove(gtileMouse, mouse.x, mouse.y)
+                  }
+
+                  onReleased: {
+                    if (root.dragActive) root.dragEnd()
+                  }
+
+                  onCanceled: {
+                    root.dragCancel()
+                  }
+
+                  onClicked: {
+                    if (!gtile.dragged) {
+                      if (gtile.isHiddenItem) root.toggleHiddenView(gtile.rowId)
+                      else root.openWidget(gtile.rowId)
+                    }
+                  }
+                }
               }
             }
 
             Text {
               textFormat: Text.PlainText
               visible: root.configuredIds.length === 0
-              width: drawerColumn.width
+              width: drawerGrid.width
               text: "No widgets hidden."
               color: Qt.darker(root.fg, 1.5)
               font.family: root.ffont
               font.pixelSize: Style.font.bodySmall
               font.italic: true
             }
-        }
+          }
 
-        Flow {
-          id: drawerGrid
-          visible: !root.manageMode && root.viewMode === "grid"
-          width: bodyFlick.width
-          spacing: root.tileGap
-          flow: Flow.LeftToRight
+          Column {
+            id: manageColumn
+            visible: root.manageMode
+            width: bodyFlick.width
+            spacing: Style.space(4)
 
-          Repeater {
-            model: root.drawerDisplayIds
+            Repeater {
+              model: root.allPlugins
 
-            delegate: Item {
-              id: gtile
-              required property int index
-              required property var modelData
-              width: root.gridCellW
-              height: root.tileHeight
+              delegate: Item {
+                id: mrow
+                required property int index
+                required property string modelData
+                width: manageColumn.width
+                implicitHeight: 34
 
-              readonly property string rowId: gtile.modelData.id
-              readonly property bool isHiddenItem: gtile.modelData.hidden
-              readonly property bool isDragTarget: root.dragActive && root.dragId !== gtile.rowId && root.dragTargetIndex === gtile.index
-              property real pressX: 0
-              property real pressY: 0
-              property bool dragged: false
+                readonly property string rowId: mrow.modelData
+                readonly property bool isWidget: root.widgetComponent(mrow.rowId) !== null
+                readonly property bool checked: root.isPending(mrow.rowId)
 
-              opacity: (root.dragId === gtile.rowId ? 0.4 : 1.0) * (gtile.isHiddenItem ? 0.5 : 1.0)
-
-              Rectangle {
-                anchors.fill: parent
-                radius: Style.cornerRadius
-                color: gtile.isDragTarget
-                  ? Util.alpha(Color.accent, 0.18)
-                  : (gtileMouse.containsMouse ? Style.hoverFillFor(root.fg, root.fg) : "transparent")
-              }
-
-              Rectangle {
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: 3
-                radius: 1.5
-                color: Color.accent
-                visible: gtile.isDragTarget
-              }
-
-              Text {
-                textFormat: Text.PlainText
-                id: label
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: Style.space(6)
-                width: parent.width - Style.space(8)
-                horizontalAlignment: Text.AlignHCenter
-                text: root.displayName(gtile.rowId)
-                color: root.fg
-                font.family: root.ffont
-                font.pixelSize: Style.font.caption
-                elide: Text.ElideRight
-                wrapMode: Text.Wrap
-                maximumLineCount: 2
-              }
-
-              Loader {
-                id: preview
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.bottom: label.top
-                anchors.bottomMargin: Style.space(2)
-                clip: true
-                sourceComponent: root.viewMode === "grid" ? root.widgetComponent(gtile.rowId) : null
-                onLoaded: {
-                  var w = preview.item
-                  if (!w) return
-                  if ("bar" in w) w.bar = Qt.binding(function() { return root.bar })
-                  if ("moduleName" in w) w.moduleName = gtile.rowId
-                  if ("settings" in w) w.settings = root.defaultsFor(gtile.rowId)
-                }
-              }
-
-              Text {
-                textFormat: Text.PlainText
-                id: gtileGlyph
-                visible: preview.status !== Loader.Ready || preview.item === null
-                anchors.fill: preview
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-                text: root.pluginGlyph(gtile.rowId)
-                color: root.fg
-                font.family: root.ffont
-                font.pixelSize: Style.space(22)
-                font.bold: true
-              }
-
-              MouseArea {
-                id: gtileMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                preventStealing: true
-                cursorShape: root.dragStarted ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-
-                onPressed: function(mouse) {
-                  gtile.dragged = false
-                  if (gtile.isHiddenItem || root.showHidden) return
-                  gtile.pressX = mouse.x
-                  gtile.pressY = mouse.y
-                  root.dragStart(gtile.rowId)
+                Rectangle {
+                  anchors.fill: parent
+                  radius: Math.max(2, Style.cornerRadius)
+                  color: mrowMouse.containsMouse || root.cursorIndex === mrow.index
+                    ? Style.hoverFillFor(root.bar ? root.bar.foreground : Color.foreground, root.bar ? root.bar.foreground : Color.foreground)
+                    : "transparent"
                 }
 
-                onPositionChanged: function(mouse) {
-                  if (!(mouse.buttons & Qt.LeftButton)) return
-                  if (!gtile.dragged && (Math.abs(mouse.x - gtile.pressX) + Math.abs(mouse.y - gtile.pressY)) >= root.dragThreshold)
-                    gtile.dragged = true
-                  if (gtile.dragged) root.dragMove(gtileMouse, mouse.x, mouse.y)
-                }
+                BorderSurface {
+                  id: checkbox
+                  anchors.verticalCenter: parent.verticalCenter
+                  anchors.left: parent.left
+                  anchors.leftMargin: Style.space(8)
+                  width: Style.space(16)
+                  height: Style.space(16)
+                  radius: Math.max(2, Style.cornerRadius / 2)
+                  visible: mrow.isWidget
+                  color: mrow.checked
+                    ? Style.selectedFillFor(root.bar ? root.bar.foreground : Color.foreground, root.bar ? root.bar.foreground : Color.foreground)
+                    : "transparent"
+                  borderSpec: mrow.checked
+                    ? Border.controlSpec("selected", root.bar ? root.bar.foreground : Color.foreground, Color.accent)
+                    : Border.controlSpec("normal", root.bar ? root.bar.foreground : Color.foreground, Color.accent)
 
-                onReleased: {
-                  if (root.dragActive) root.dragEnd()
-                }
-
-                onCanceled: {
-                  root.dragCancel()
-                }
-
-                onClicked: {
-                  if (!gtile.dragged) {
-                    if (gtile.isHiddenItem) root.toggleHiddenView(gtile.rowId)
-                    else root.openWidget(gtile.rowId)
+                  Text {
+                    textFormat: Text.PlainText
+                    anchors.centerIn: parent
+                    visible: mrow.checked
+                    text: "\u2713"
+                    color: Style.selectedStateColor(root.bar ? root.bar.foreground : Color.foreground, Color.accent)
+                    font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                    font.pixelSize: Math.round(checkbox.height * 0.85)
+                    font.bold: true
                   }
                 }
-              }
-            }
-          }
-
-          Text {
-            textFormat: Text.PlainText
-            visible: root.configuredIds.length === 0
-            width: drawerGrid.width
-            text: "No widgets hidden."
-            color: Qt.darker(root.fg, 1.5)
-            font.family: root.ffont
-            font.pixelSize: Style.font.bodySmall
-            font.italic: true
-          }
-        }
-
-        Column {
-          id: manageColumn
-          visible: root.manageMode
-          width: bodyFlick.width
-          spacing: Style.space(4)
-
-          Repeater {
-            model: root.allPlugins
-
-            delegate: Item {
-              id: mrow
-              required property string modelData
-              width: manageColumn.width
-              implicitHeight: 34
-
-              readonly property string rowId: mrow.modelData
-              readonly property bool isWidget: root.widgetComponent(mrow.rowId) !== null
-              readonly property bool checked: root.isPending(mrow.rowId)
-
-              Rectangle {
-                anchors.fill: parent
-                radius: Math.max(2, Style.cornerRadius)
-                color: mrowMouse.containsMouse
-                  ? Style.hoverFillFor(root.bar ? root.bar.foreground : Color.foreground, root.bar ? root.bar.foreground : Color.foreground)
-                  : "transparent"
-              }
-
-              BorderSurface {
-                id: checkbox
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.left: parent.left
-                anchors.leftMargin: Style.space(8)
-                width: Style.space(16)
-                height: Style.space(16)
-                radius: Math.max(2, Style.cornerRadius / 2)
-                visible: mrow.isWidget
-                color: mrow.checked
-                  ? Style.selectedFillFor(root.bar ? root.bar.foreground : Color.foreground, root.bar ? root.bar.foreground : Color.foreground)
-                  : "transparent"
-                borderSpec: mrow.checked
-                  ? Border.controlSpec("selected", root.bar ? root.bar.foreground : Color.foreground, Color.accent)
-                  : Border.controlSpec("normal", root.bar ? root.bar.foreground : Color.foreground, Color.accent)
 
                 Text {
                   textFormat: Text.PlainText
-                  anchors.centerIn: parent
-                  visible: mrow.checked
-                  text: "\u2713"
-                  color: Style.selectedStateColor(root.bar ? root.bar.foreground : Color.foreground, Color.accent)
+                  anchors.verticalCenter: parent.verticalCenter
+                  anchors.left: checkbox.right
+                  anchors.right: rowActions.left
+                  anchors.leftMargin: Style.space(8)
+                  anchors.rightMargin: Style.space(8)
+                  text: root.displayName(mrow.rowId)
+                  color: root.bar ? root.bar.foreground : Color.foreground
                   font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                  font.pixelSize: Math.round(checkbox.height * 0.85)
-                  font.bold: true
-                }
-              }
-
-              Text {
-                textFormat: Text.PlainText
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.left: checkbox.right
-                anchors.right: rowActions.left
-                anchors.leftMargin: Style.space(8)
-                anchors.rightMargin: Style.space(8)
-                text: root.displayName(mrow.rowId)
-                color: root.bar ? root.bar.foreground : Color.foreground
-                font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                font.pixelSize: Style.font.bodySmall
-                font.italic: mrow.checked
-                elide: Text.ElideRight
-              }
-
-              MouseArea {
-                id: mrowMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                preventStealing: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                  if (mrow.isWidget) root.togglePending(mrow.rowId)
-                }
-              }
-
-              Row {
-                id: rowActions
-                anchors.right: parent.right
-                anchors.rightMargin: Style.space(8)
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(4)
-
-                Button {
-                  width: 24
-                  height: 24
-                  visible: root.configuredIds.indexOf(mrow.rowId) !== -1
-                  text: root.isHiddenView(mrow.rowId) ? "\uf070" : "\uf06e"
-                  tooltipText: root.isHiddenView(mrow.rowId) ? "Hidden: click to show in drawer" : "Hide from drawer"
-                  foreground: root.isHiddenView(mrow.rowId) ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
-                  horizontalPadding: 0
-                  verticalPadding: 0
-                  onClicked: root.toggleHiddenView(mrow.rowId)
+                  font.pixelSize: Style.font.bodySmall
+                  font.italic: mrow.checked
+                  elide: Text.ElideRight
                 }
 
+                MouseArea {
+                  id: mrowMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  preventStealing: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    if (mrow.isWidget) root.togglePending(mrow.rowId)
+                  }
+                }
+
+                Row {
+                  id: rowActions
+                  anchors.right: parent.right
+                  anchors.rightMargin: Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(4)
+
+                  Button {
+                    width: 24
+                    height: 24
+                    visible: root.configuredIds.indexOf(mrow.rowId) !== -1
+                    text: root.isHiddenView(mrow.rowId) ? "\uf070" : "\uf06e"
+                    tooltipText: root.isHiddenView(mrow.rowId) ? "Hidden: click to show in drawer" : "Hide from drawer"
+                    foreground: root.isHiddenView(mrow.rowId) ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
+                    horizontalPadding: 0
+                    verticalPadding: 0
+                    onClicked: root.toggleHiddenView(mrow.rowId)
+                  }
+
+                }
               }
             }
+
           }
 
-        }
+          Rectangle {
+            id: dragGhost
+            visible: root.dragActive
+            z: 20
+            x: root.dragGhostX
+            y: root.dragGhostY
+            width: root.viewMode === "grid" ? root.gridCellW : drawerColumn.width
+            height: root.viewMode === "grid" ? root.tileHeight : root.listRowHeight
+            radius: Math.max(2, Style.cornerRadius)
+            color: Util.alpha(Color.accent, 0.25)
+            border.width: 1.5
+            border.color: Color.accent
 
-        Rectangle {
-          id: dragGhost
-          visible: root.dragActive
-          z: 20
-          x: root.dragGhostX
-          y: root.dragGhostY
-          width: root.viewMode === "grid" ? root.gridCellW : drawerColumn.width
-          height: root.viewMode === "grid" ? root.tileHeight : 30
-          radius: Math.max(2, Style.cornerRadius)
-          color: Util.alpha(Color.accent, 0.25)
-          border.width: 1.5
-          border.color: Color.accent
-
-          Text {
-            textFormat: Text.PlainText
-            id: dragGhostText
-            anchors.fill: parent
-            anchors.leftMargin: Style.space(8)
-            anchors.rightMargin: Style.space(8)
-            horizontalAlignment: root.viewMode === "grid" ? Text.AlignHCenter : Text.AlignLeft
-            verticalAlignment: Text.AlignVCenter
-            text: root.displayName(root.dragId)
-            color: root.fg
-            font.family: root.ffont
-            font.pixelSize: Style.font.bodySmall
-            font.bold: true
-            elide: Text.ElideRight
+            Text {
+              textFormat: Text.PlainText
+              id: dragGhostText
+              anchors.fill: parent
+              anchors.leftMargin: Style.space(8)
+              anchors.rightMargin: Style.space(8)
+              horizontalAlignment: root.viewMode === "grid" ? Text.AlignHCenter : Text.AlignLeft
+              verticalAlignment: Text.AlignVCenter
+              text: root.displayName(root.dragId)
+              color: root.fg
+              font.family: root.ffont
+              font.pixelSize: Style.font.bodySmall
+              font.bold: true
+              elide: Text.ElideRight
+            }
           }
         }
       }

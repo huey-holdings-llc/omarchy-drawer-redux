@@ -13,7 +13,7 @@ Aly Sarhan, which is no longer maintained. It has not had a release yet.
 ## What it does
 
 - Hides any bar widget in a compact drawer without disabling it.
-- Shows hidden widgets in a grid with live previews, or in a list.
+- Shows hidden widgets in a grid with previews, or in a compact list.
 - Reorders them by drag and drop.
 - Moves widgets between the bar and the drawer from an edit view.
 
@@ -47,6 +47,9 @@ omarchy plugin remove io.github.huey-holdings-llc.omarchy-drawer-redux
 - Left-click the drawer button to open or close it.
 - Click an entry to open that widget's panel.
 - Click the pen icon to choose which widgets live in the drawer.
+- With the drawer open, arrows or `hjkl` move, Enter opens, Esc closes.
+- To open it from a hotkey, bind
+  `omarchy-shell shell toggle io.github.huey-holdings-llc.omarchy-drawer-redux`.
 
 ## Known limitations
 
