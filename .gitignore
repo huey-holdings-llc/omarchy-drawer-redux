@@ -1,0 +1,8 @@
+tests/tmp/
+*.png
+!preview.png
+.spike/
+.claude/
+!docs/screenshots/*.png
+AGENTS.md
+coverage/
