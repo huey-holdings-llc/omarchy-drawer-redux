@@ -20,7 +20,7 @@ Aly Sarhan, which is no longer maintained. It has not had a release yet.
 
 ## Requirements
 
-Omarchy 4.0.3 or newer. Nothing else.
+Omarchy 4.0.6 or newer. Nothing else.
 
 ## Install
 
