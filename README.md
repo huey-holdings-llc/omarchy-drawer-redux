@@ -4,6 +4,13 @@ Collapse the bar widgets you rarely need into one drawer button, without
 disabling them. Pick a widget from the drawer and its own panel opens right
 under the button.
 
+> [!NOTE]
+> **Omarchy 4.5 does this natively.** Drag a widget into the bar's tray section
+> and it lives in the tray drawer, behind the chevron, still running. For most
+> people that makes this plugin redundant. Drawer Redux still works on 4.5 and
+> keeps its click-to-open panel with grid and list views, but expect it to move
+> into maintenance mode. See [Moving to the native drawer](#moving-to-the-native-drawer).
+
 ![Omarchy Drawer Redux](preview.png)
 
 This is the maintained continuation of
@@ -19,7 +26,7 @@ Aly Sarhan, which is no longer maintained.
 
 ## Requirements
 
-Omarchy 4.0.6. Omarchy 4.5 has not been tested yet, see the Roadmap.
+Omarchy 4.0.6 or 4.5.0.
 
 ## Install
 
@@ -101,14 +108,23 @@ Also:
 
 ## Roadmap
 
-- Omarchy 4.5 adds a native tray drawer for bar widgets. If that covers what you
-  need, use it. This plugin stays useful if you want a click-to-open panel with
-  grid and list views.
-- Support for 4.5 comes as soon as it ships. Until then, 4.5 is untested.
+- Tested on Omarchy 4.5.0. Its native tray drawer covers the core job of this
+  plugin, hiding bar widgets without disabling them.
+- What only Drawer Redux has: a click-to-open panel under its button, with grid
+  previews and a compact list.
+- The plan is maintenance mode: fixes if an Omarchy update breaks it, no new
+  features. If the native drawer turns out to cover everything, the plugin will
+  be deprecated and its marketplace listing withdrawn.
 - The drawer relies on Omarchy internals that have no stability promise, so an
   Omarchy update could break it. A fix or a clear notice will follow if it does.
-- We expect Omarchy to cover this natively at some point. When it does, this
-  plugin will be deprecated, with instructions for moving your widgets back.
+
+## Moving to the native drawer
+
+1. Open the drawer's edit view (pen icon) and move every widget back to the bar.
+2. Remove the drawer:
+   `omarchy plugin remove io.github.huey-holdings-llc.omarchy-drawer-redux`
+3. Drag the widgets you want tucked away into the bar's tray section, next to
+   the system tray. Hover the chevron to show them.
 
 ## Privacy
 

@@ -5,6 +5,13 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-20
+
+### Changed
+- Tested on Omarchy 4.5.0. No code changes were needed.
+- The README says Omarchy 4.5's native tray drawer now covers what this plugin
+  does, explains how to move to it, and sets the plan for maintenance mode.
+
 ## [1.0.0] - 2026-11-01
 
 First public release.
